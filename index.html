@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MunnizzApp</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#16a34a;--green-h:#15803d;--green-l:#dcfce7;--green-d:#14532d;
+  --bg:#f9fafb;--card:#fff;--surface:#f3f4f6;
+  --border:#e5e7eb;--border-s:#d1d5db;
+  --text:#111827;--text2:#6b7280;--text3:#9ca3af;
+  --r:8px;--blue:#2563eb;
+  --danger-bg:#fee2e2;--danger-c:#991b1b;--danger-b:#fca5a5;
+  --success-bg:#dcfce7;--success-c:#166534;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:2rem 1rem;gap:0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:2rem;width:100%;max-width:560px}
+.logo{display:flex;align-items:baseline;gap:8px;margin-bottom:4px}
+.logo-name{font-size:26px;font-weight:600;letter-spacing:-.5px}
+.logo-name span{color:var(--green)}
+.logo-tag{font-size:11px;color:var(--text3);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:2px 8px}
+.subtitle{font-size:13px;color:var(--text2);margin-bottom:1.5rem;line-height:1.5}
+
+/* STEPPER */
+.stepper{display:flex;align-items:center;gap:0;margin-bottom:1.75rem}
+.step{display:flex;align-items:center;gap:6px;flex:1}
+.step-num{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;flex-shrink:0;transition:all .2s}
+.step-num.done{background:var(--green);color:#fff}
+.step-num.active{background:var(--green);color:#fff;box-shadow:0 0 0 3px var(--green-l)}
+.step-num.pending{background:var(--surface);color:var(--text3);border:1px solid var(--border-s)}
+.step-label{font-size:12px;color:var(--text3);transition:color .2s}
+.step-label.active{color:var(--text);font-weight:500}
+.step-label.done{color:var(--green)}
+.step-divider{height:1px;flex:1;background:var(--border);margin:0 6px}
+
+/* FORMS */
+label.lbl{display:block;font-size:13px;font-weight:500;color:var(--text);margin-bottom:5px}
+.hint{font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5}
+.hint a{color:var(--blue);text-decoration:none}
+.hint a:hover{text-decoration:underline}
+input.inp{width:100%;padding:9px 12px;border:1px solid var(--border-s);border-radius:var(--r);font-size:14px;color:var(--text);background:var(--card);outline:none;transition:border .15s;font-family:monospace;margin-bottom:14px}
+input.inp:focus{border-color:var(--green)}
+.row{display:flex;gap:8px}
+
+/* BUTTONS */
+.btn{padding:9px 18px;border-radius:var(--r);font-size:14px;font-weight:500;cursor:pointer;border:1px solid transparent;transition:all .15s;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;line-height:1}
+.btn-p{background:var(--green);color:#fff;border-color:var(--green);width:100%;justify-content:center}
+.btn-p:hover{background:var(--green-h)}
+.btn-p:disabled{opacity:.4;cursor:not-allowed}
+.btn-g{background:transparent;color:var(--text2);border-color:var(--border-s)}
+.btn-g:hover{background:var(--surface)}
+.btn-sm{padding:6px 14px;font-size:13px}
+.btn-google{background:#fff;color:#3c4043;border:1px solid var(--border-s);width:100%;justify-content:center;padding:11px;font-size:15px}
+.btn-google:hover{background:var(--surface)}
+.btn-google svg{width:18px;height:18px;flex-shrink:0}
+
+/* STATUS BAR */
+.status-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.25rem;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:12px;border-radius:20px;padding:3px 10px}
+.pill-green{background:var(--green-l);color:var(--green-d)}
+.pill-dot{width:6px;height:6px;background:var(--green);border-radius:50%}
+
+/* DROP ZONE */
+#drop-zone{border:1.5px dashed var(--border-s);border-radius:12px;padding:2.5rem 1.5rem;text-align:center;cursor:pointer;background:var(--surface);transition:all .15s}
+#drop-zone:hover,#drop-zone.over{background:var(--green-l);border-color:var(--green)}
+.dz-icon{font-size:2rem;margin-bottom:10px}
+.dz-main{font-size:15px;color:var(--text2);margin-bottom:4px}
+.dz-main span{color:var(--blue);font-weight:500}
+.dz-sub{font-size:12px;color:var(--text3)}
+
+/* PREVIEW BAR */
+#preview-bar{display:none;margin-top:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);align-items:center;gap:12px}
+#thumb{width:44px;height:58px;object-fit:cover;border-radius:6px;border:1px solid var(--border)}
+.pname{font-size:13px;font-weight:500;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.phint{font-size:11px;color:var(--text3);margin-top:2px}
+.ibtn{background:none;border:none;cursor:pointer;color:var(--text3);padding:4px;border-radius:4px;font-size:14px;line-height:1}
+.ibtn:hover{background:var(--border);color:var(--text)}
+
+/* CAL SELECT */
+.cal-row{margin-bottom:12px}
+select.sel{width:100%;padding:9px 12px;border:1px solid var(--border-s);border-radius:var(--r);font-size:14px;color:var(--text);background:var(--card);outline:none;cursor:pointer}
+select.sel:focus{border-color:var(--green)}
+
+/* LOADING */
+#loading{display:none;text-align:center;padding:2rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;animation:spin 1s linear infinite;font-size:1.5rem;color:var(--green)}
+.load-text{font-size:14px;color:var(--text2);margin-top:10px}
+
+/* ALERTS */
+.alert{display:none;margin-top:12px;padding:12px;border-radius:var(--r);font-size:13px;line-height:1.5}
+.alert-err{background:var(--danger-bg);border:1px solid var(--danger-b);color:var(--danger-c)}
+.alert-ok{background:var(--success-bg);border:1px solid #86efac;color:var(--success-c)}
+
+/* RESULTS */
+#results{display:none;margin-top:1.5rem}
+.res-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px}
+.res-count{font-size:14px;font-weight:500;color:var(--text)}
+.events-list{display:flex;flex-direction:column;gap:5px;max-height:320px;overflow-y:auto;padding-right:2px}
+.event-row{display:flex;align-items:center;gap:8px;padding:7px 11px;background:var(--surface);border-radius:var(--r);border:1px solid var(--border);flex-wrap:wrap}
+.cat-badge{border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+.ev-rem{font-size:12px;color:var(--text2)}
+.ev-rem strong{color:var(--text)}
+.ev-date{font-size:11px;color:var(--text3);margin-left:auto}
+.ev-status{font-size:11px;margin-left:4px}
+
+/* PROGRESS */
+#progress-bar-wrap{display:none;margin-top:12px}
+.pb-label{font-size:12px;color:var(--text2);margin-bottom:6px}
+.pb-track{background:var(--surface);border-radius:20px;height:6px;overflow:hidden;border:1px solid var(--border)}
+.pb-fill{height:100%;background:var(--green);border-radius:20px;transition:width .3s;width:0%}
+
+/* NOTE */
+.note{font-size:11px;color:var(--text3);margin-top:12px;line-height:1.6}
+
+/* SCREENS */
+.screen{display:none}
+.screen.active{display:block}
+
+footer{margin-top:1.5rem;text-align:center;font-size:12px;color:var(--text3)}
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="logo">
+    <span class="logo-name">Munnizz<span>App</span></span>
+    <span class="logo-tag">Vittoria RG</span>
+  </div>
+  <p class="subtitle">Carica la foto del calendario → gli eventi vengono creati direttamente su Google Calendar.</p>
+
+  <!-- STEPPER -->
+  <div class="stepper" id="stepper">
+    <div class="step">
+      <div class="step-num active" id="s1n">1</div>
+      <span class="step-label active" id="s1l">Chiavi API</span>
+    </div>
+    <div class="step-divider"></div>
+    <div class="step">
+      <div class="step-num pending" id="s2n">2</div>
+      <span class="step-label" id="s2l">Google</span>
+    </div>
+    <div class="step-divider"></div>
+    <div class="step">
+      <div class="step-num pending" id="s3n">3</div>
+      <span class="step-label" id="s3l">App</span>
+    </div>
+  </div>
+
+  <!-- ── SCREEN 1: SETUP ── -->
+  <div class="screen active" id="screen-setup">
+    <label class="lbl" for="inp-anthropic">Chiave API Anthropic</label>
+    <p class="hint">Generala su <a href="https://console.anthropic.com/settings/keys" target="_blank">console.anthropic.com</a> → API Keys → Create Key.</p>
+    <input class="inp" id="inp-anthropic" type="password" placeholder="sk-ant-api03-..." autocomplete="off" spellcheck="false">
+
+    <label class="lbl" for="inp-gclientid">Google OAuth Client ID</label>
+    <p class="hint">
+      Setup una-tantum (5 min):<br>
+      1. Vai su <a href="https://console.cloud.google.com" target="_blank">console.cloud.google.com</a><br>
+      2. Crea progetto → <b>API e servizi → Libreria</b> → abilita <b>Google Calendar API</b><br>
+      3. <b>Credenziali → Crea credenziali → ID client OAuth</b> → tipo <b>Applicazione web</b><br>
+      4. In "Origini JavaScript autorizzate" aggiungi l'URL di GitHub Pages<br>
+      5. Copia il Client ID qui sotto
+    </p>
+    <input class="inp" id="inp-gclientid" type="text" placeholder="xxxxxxxxxxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+
+    <button class="btn btn-p" onclick="saveSetup()">Continua →</button>
+    <div class="alert alert-err" id="setup-err"></div>
+  </div>
+
+  <!-- ── SCREEN 2: GOOGLE AUTH ── -->
+  <div class="screen" id="screen-auth">
+    <p style="font-size:14px;color:var(--text2);margin-bottom:1.25rem;line-height:1.5">
+      Autorizza MunnizzApp ad accedere al tuo Google Calendar per creare gli eventi automaticamente.
+    </p>
+    <button class="btn btn-google" onclick="connectGoogle()">
+      <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      </svg>
+      Accedi con Google
+    </button>
+    <div style="margin-top:12px;text-align:center">
+      <button class="btn btn-g btn-sm" onclick="backToSetup()" style="font-size:12px">← Modifica chiavi</button>
+    </div>
+    <div class="alert alert-err" id="auth-err"></div>
+  </div>
+
+  <!-- ── SCREEN 3: APP ── -->
+  <div class="screen" id="screen-app">
+
+    <div class="status-bar">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="pill pill-green"><span class="pill-dot"></span>Anthropic OK</span>
+        <span class="pill pill-green"><span class="pill-dot"></span>Google Calendar</span>
+      </div>
+      <button class="btn btn-g btn-sm" onclick="logout()">Disconnetti</button>
+    </div>
+
+    <!-- Calendar selector -->
+    <div class="cal-row">
+      <label class="lbl" for="cal-select">Calendario di destinazione</label>
+      <select class="sel" id="cal-select">
+        <option value="">Caricamento calendari…</option>
+      </select>
+    </div>
+
+    <!-- Drop zone -->
+    <div id="drop-zone">
+      <div class="dz-icon">📷</div>
+      <p class="dz-main">Trascina la foto qui o <span id="browse-lbl">sfoglia</span></p>
+      <p class="dz-sub">JPG · PNG · WEBP</p>
+      <input type="file" id="file-input" accept="image/*" style="display:none">
+    </div>
+
+    <div id="preview-bar">
+      <img id="thumb" alt="">
+      <div style="flex:1;min-width:0">
+        <p class="pname" id="fname"></p>
+        <p class="phint">Immagine pronta</p>
+      </div>
+      <button class="ibtn" onclick="clearFile()" aria-label="Rimuovi">✕</button>
+    </div>
+
+    <button id="analyze-btn" class="btn btn-p" disabled onclick="analyzeImage()" style="margin-top:12px">
+      ✦ Analizza e carica su Google Calendar
+    </button>
+
+    <!-- Loading -->
+    <div id="loading">
+      <div class="spin">↻</div>
+      <p class="load-text" id="load-text">Lettura calendario in corso…</p>
+    </div>
+
+    <!-- Progress bar (during upload) -->
+    <div id="progress-bar-wrap">
+      <p class="pb-label" id="pb-label">Creazione eventi…</p>
+      <div class="pb-track"><div class="pb-fill" id="pb-fill"></div></div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="alert alert-err" id="app-err"></div>
+    <div class="alert alert-ok" id="app-ok"></div>
+
+    <!-- Results preview -->
+    <div id="results">
+      <div class="res-hdr">
+        <span class="res-count" id="count-label"></span>
+      </div>
+      <div class="events-list" id="events-list"></div>
+      <p class="note">Gli eventi sono creati come appuntamenti alle 17:30 del giorno precedente alla raccolta, con notifica popup all'orario dell'evento.</p>
+    </div>
+
+  </div>
+</div>
+
+<footer>MunnizzApp · Comune di Vittoria RG</footer>
+
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script>
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let accessToken = null;
+let tokenClient = null;
+let evts = [];
+let b64 = null, mime = null;
+
+const CATS = {
+  'UMIDO':                    {bg:'#FFF3E0',c:'#92400E'},
+  'SECCO NON DIFFERENZIABILE':{bg:'#F3F4F6',c:'#374151'},
+  'CARTA E CARTONE':          {bg:'#DBEAFE',c:'#1E3A5F'},
+  'PLASTICA E METALLI':       {bg:'#FEF9C3',c:'#78350F'},
+  'VETRO':                    {bg:'#DCFCE7',c:'#14532D'}
+};
+const ART = {
+  'UMIDO':"l'",'SECCO NON DIFFERENZIABILE':'il ',
+  'CARTA E CARTONE':'la ','PLASTICA E METALLI':'la ','VETRO':'il '
+};
+const CAT_EMOJI = {
+  'UMIDO':'🟤','SECCO NON DIFFERENZIABILE':'⚫','CARTA E CARTONE':'🔵',
+  'PLASTICA E METALLI':'🟡','VETRO':'🟢'
+};
+
+// ─────────────────────────────────────────────
+// UTILS
+// ─────────────────────────────────────────────
+function d1(s) {
+  const [d,m,y] = s.split('/').map(Number);
+  const dt = new Date(y, m-1, d);
+  dt.setDate(dt.getDate() - 1);
+  return [
+    String(dt.getFullYear()),
+    String(dt.getMonth()+1).padStart(2,'0'),
+    String(dt.getDate()).padStart(2,'0')
+  ].join('-');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  updateStepper(id);
+}
+
+function updateStepper(screen) {
+  const steps = ['setup','auth','app'];
+  const idx = steps.indexOf(screen);
+  steps.forEach((s, i) => {
+    const n = document.getElementById('s'+(i+1)+'n');
+    const l = document.getElementById('s'+(i+1)+'l');
+    if (i < idx) { n.className='step-num done'; n.textContent='✓'; l.className='step-label done'; }
+    else if (i === idx) { n.className='step-num active'; n.textContent=i+1; l.className='step-label active'; }
+    else { n.className='step-num pending'; n.textContent=i+1; l.className='step-label'; }
+  });
+}
+
+function showErr(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.style.display = 'block';
+}
+function hideEl(id) { document.getElementById(id).style.display = 'none'; }
+function showEl(id, display='block') { document.getElementById(id).style.display = display; }
+
+// ─────────────────────────────────────────────
+// SETUP
+// ─────────────────────────────────────────────
+function saveSetup() {
+  const ak = document.getElementById('inp-anthropic').value.trim();
+  const gk = document.getElementById('inp-gclientid').value.trim();
+  hideEl('setup-err');
+  if (!ak.startsWith('sk-')) { showErr('setup-err','Chiave Anthropic non valida (deve iniziare con sk-)'); return; }
+  if (!gk.includes('.apps.googleusercontent.com')) { showErr('setup-err','Client ID Google non valido'); return; }
+  localStorage.setItem('munnizz_ak', ak);
+  localStorage.setItem('munnizz_gk', gk);
+  showScreen('auth');
+  initGoogleAuth();
+}
+
+function backToSetup() {
+  accessToken = null;
+  showScreen('setup');
+}
+
+function logout() {
+  accessToken = null;
+  evts = []; b64 = null; mime = null;
+  clearFile();
+  showScreen('auth');
+}
+
+// ─────────────────────────────────────────────
+// GOOGLE AUTH
+// ─────────────────────────────────────────────
+function initGoogleAuth() {
+  const clientId = localStorage.getItem('munnizz_gk');
+  if (!clientId || typeof google === 'undefined') {
+    setTimeout(initGoogleAuth, 500); return;
+  }
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: clientId,
+    scope: 'https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events',
+    callback: async (resp) => {
+      if (resp.error) { showErr('auth-err', 'Errore autenticazione: ' + resp.error); return; }
+      accessToken = resp.access_token;
+      hideEl('auth-err');
+      showScreen('app');
+      await loadCalendars();
+      initDrop();
+    }
+  });
+}
+
+function connectGoogle() {
+  hideEl('auth-err');
+  if (!tokenClient) { showErr('auth-err','Libreria Google non ancora caricata, riprova tra un secondo.'); return; }
+  tokenClient.requestAccessToken({ prompt: 'consent' });
+}
+
+// ─────────────────────────────────────────────
+// CALENDARS
+// ─────────────────────────────────────────────
+async function loadCalendars() {
+  try {
+    const res = await fetch('https://www.googleapis.com/calendar/v3/users/me/calendarList', {
+      headers: { 'Authorization': 'Bearer ' + accessToken }
+    });
+    const data = await res.json();
+    const sel = document.getElementById('cal-select');
+    sel.innerHTML = '';
+    (data.items || [])
+      .filter(c => c.accessRole === 'owner' || c.accessRole === 'writer')
+      .forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.textContent = c.summary + (c.primary ? ' (principale)' : '');
+        if (c.primary) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    // Option to create new calendar
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ Crea nuovo calendario "Raccolta Differenziata"';
+    sel.appendChild(newOpt);
+  } catch(e) {
+    console.error('Errore caricamento calendari:', e);
+  }
+}
+
+async function getOrCreateCalendar() {
+  const sel = document.getElementById('cal-select');
+  if (sel.value !== '__new__') return sel.value;
+  // Create new calendar
+  const res = await fetch('https://www.googleapis.com/calendar/v3/calendars', {
+    method: 'POST',
+    headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ summary: 'Raccolta Differenziata', description: 'Generato da MunnizzApp', timeZone: 'Europe/Rome' })
+  });
+  const data = await res.json();
+  await loadCalendars();
+  document.getElementById('cal-select').value = data.id;
+  return data.id;
+}
+
+// ─────────────────────────────────────────────
+// FILE HANDLING
+// ─────────────────────────────────────────────
+function initDrop() {
+  const dz = document.getElementById('drop-zone');
+  const fi = document.getElementById('file-input');
+  dz.addEventListener('click', () => fi.click());
+  document.getElementById('browse-lbl').addEventListener('click', e => { e.stopPropagation(); fi.click(); });
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+  dz.addEventListener('drop', e => { e.preventDefault(); dz.classList.remove('over'); if(e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+  fi.addEventListener('change', () => { if(fi.files[0]) loadFile(fi.files[0]); });
+}
+
+function loadFile(f) {
+  document.getElementById('fname').textContent = f.name;
+  document.getElementById('thumb').src = URL.createObjectURL(f);
+  showEl('preview-bar', 'flex');
+  const r = new FileReader();
+  r.onload = e => { b64 = e.target.result.split(',')[1]; mime = f.type; };
+  r.readAsDataURL(f);
+  document.getElementById('analyze-btn').disabled = false;
+  hideEl('results'); hideEl('app-err'); hideEl('app-ok'); hideEl('progress-bar-wrap');
+}
+
+function clearFile() {
+  b64 = null; mime = null; evts = [];
+  const fi = document.getElementById('file-input');
+  if(fi) fi.value = '';
+  hideEl('preview-bar');
+  const ab = document.getElementById('analyze-btn');
+  if(ab) ab.disabled = true;
+  hideEl('results'); hideEl('app-err'); hideEl('app-ok'); hideEl('progress-bar-wrap');
+}
+
+// ─────────────────────────────────────────────
+// ANALYZE + UPLOAD
+// ─────────────────────────────────────────────
+async function analyzeImage() {
+  if (!b64) return;
+  const ak = localStorage.getItem('munnizz_ak');
+  hideEl('results'); hideEl('app-err'); hideEl('app-ok'); hideEl('progress-bar-wrap');
+  showEl('loading');
+  document.getElementById('load-text').textContent = 'Lettura del calendario in corso…';
+  document.getElementById('analyze-btn').disabled = true;
+
+  try {
+    // 1. ANALYZE IMAGE
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ak,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: [
+          { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+          { type: 'text', text: `Analizza questo calendario di raccolta differenziata porta a porta.
+Estrai SOLO le righe con raccolta assegnata. Escludi domeniche e righe senza raccolta.
+Rispondi UNICAMENTE con JSON valido, zero testo aggiuntivo, zero backtick:
+{"events":[{"date":"DD/MM/YYYY","type":"TIPO"}]}
+Tipi validi (esattamente): UMIDO, SECCO NON DIFFERENZIABILE, CARTA E CARTONE, PLASTICA E METALLI, VETRO` }
+        ]}]
+      })
+    });
+    if (!res.ok) { const e = await res.json(); throw new Error('Anthropic: ' + (e.error?.message || res.status)); }
+    const data = await res.json();
+    const txt = data.content.map(i => i.text||'').join('').replace(/```json|```/g,'').trim();
+    evts = JSON.parse(txt).events || [];
+    if (!evts.length) throw new Error('Nessun evento trovato. Verifica la qualità della foto.');
+
+    // 2. RENDER PREVIEW
+    renderPreview();
+
+    // 3. UPLOAD TO GOOGLE CALENDAR
+    document.getElementById('load-text').textContent = 'Caricamento su Google Calendar…';
+    hideEl('loading'); showEl('loading');
+
+    const calId = await getOrCreateCalendar();
+    hideEl('loading');
+    showEl('progress-bar-wrap');
+
+    let ok = 0, fail = 0;
+    for (let i = 0; i < evts.length; i++) {
+      const ev = evts[i];
+      const pct = Math.round((i / evts.length) * 100);
+      document.getElementById('pb-fill').style.width = pct + '%';
+      document.getElementById('pb-label').textContent = `Caricamento evento ${i+1} di ${evts.length}…`;
+
+      const dateStr = d1(ev.date);
+      const art = ART[ev.type] || '';
+      const emoji = CAT_EMOJI[ev.type] || '🗑';
+      const gcEvent = {
+        summary: emoji + ' Raccolta ' + ev.type,
+        description: 'Metti fuori ' + art + ev.type + '\nRaccolta domani ' + ev.date.slice(0,5) + '\n\nGenerato da MunnizzApp',
+        location: 'Vittoria RG',
+        start: { dateTime: dateStr + 'T17:30:00', timeZone: 'Europe/Rome' },
+        end:   { dateTime: dateStr + 'T18:30:00', timeZone: 'Europe/Rome' },
+        reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 0 }] }
+      };
+
+      try {
+        const r = await fetch(
+          'https://www.googleapis.com/calendar/v3/calendars/' + encodeURIComponent(calId) + '/events',
+          {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify(gcEvent)
+          }
+        );
+        if (r.ok) { ok++; updateEventStatus(i, '✓'); }
+        else { fail++; updateEventStatus(i, '✗'); }
+      } catch { fail++; updateEventStatus(i, '✗'); }
+    }
+
+    document.getElementById('pb-fill').style.width = '100%';
+    document.getElementById('pb-label').textContent = 'Completato!';
+
+    const okMsg = document.getElementById('app-ok');
+    okMsg.textContent = `✓ ${ok} eventi creati su Google Calendar${fail ? ` (${fail} errori)` : ''}!`;
+    okMsg.style.display = 'block';
+
+  } catch(e) {
+    hideEl('loading');
+    showErr('app-err', 'Errore: ' + e.message);
+  } finally {
+    hideEl('loading');
+    document.getElementById('analyze-btn').disabled = false;
+  }
+}
+
+function renderPreview() {
+  document.getElementById('count-label').textContent = evts.length + ' eventi estratti';
+  const list = document.getElementById('events-list');
+  list.innerHTML = '';
+  evts.forEach((ev, i) => {
+    const remDate = d1(ev.date);
+    const [y,m,d] = remDate.split('-');
+    const remFmt = d+'/'+m+'/'+y;
+    const st = CATS[ev.type] || {bg:'#F3F4F6',c:'#374151'};
+    const row = document.createElement('div');
+    row.className = 'event-row';
+    row.id = 'ev-row-' + i;
+    row.innerHTML = `<span class="cat-badge" style="background:${st.bg};color:${st.c}">${ev.type}</span><span class="ev-rem">ore 17:30 del <strong>${remFmt}</strong></span><span class="ev-date">raccolta ${ev.date}</span><span class="ev-status" id="ev-st-${i}">⏳</span>`;
+    list.appendChild(row);
+  });
+  showEl('results');
+}
+
+function updateEventStatus(idx, status) {
+  const el = document.getElementById('ev-st-' + idx);
+  if (el) el.textContent = status;
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  const ak = localStorage.getItem('munnizz_ak');
+  const gk = localStorage.getItem('munnizz_gk');
+  if (ak && gk) {
+    document.getElementById('inp-anthropic').value = ak;
+    document.getElementById('inp-gclientid').value = gk;
+    showScreen('auth');
+    // Wait for GIS library
+    const wait = setInterval(() => {
+      if (typeof google !== 'undefined') { clearInterval(wait); initGoogleAuth(); }
+    }, 300);
+  } else {
+    showScreen('setup');
+  }
+});
+</script>
+</body>
+</html>
