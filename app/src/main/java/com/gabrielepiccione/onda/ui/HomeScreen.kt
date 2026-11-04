@@ -66,6 +66,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
@@ -258,7 +259,17 @@ fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStat
     fun rubber(p: Float): Float = sign(p) * sqrt(abs(p)) * 9f
 
     // Profondità: quando si apre un pannello la home arretra e sfuma
-    val depth by animateFloatAsState(if (overlay == Overlay.NONE) 0f else 1f, Motion.enter(450), label = "depth")
+    // Profondità solo per ricerca e impostazioni; l'elenco app resta sullo stesso piano
+    val depth by animateFloatAsState(
+        if (overlay == Overlay.SEARCH || overlay == Overlay.SETTINGS) 1f else 0f,
+        Motion.enter(450),
+        label = "depth",
+    )
+    val listMode by animateFloatAsState(
+        if (overlay == Overlay.ALL_APPS) 1f else 0f,
+        androidx.compose.animation.core.tween(140, easing = Motion.Standard),
+        label = "listMode",
+    )
     val panelScale = 1f - 0.1f * backProgress
     val panelCorner = (32 * backProgress).dp
 
@@ -288,7 +299,7 @@ fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStat
                     val s = 1f - 0.06f * depth
                     scaleX = s; scaleY = s
                     val pr = (abs(pull.value) / threshold).coerceIn(0f, 1f)
-                    alpha = (1f - depth) * (1f - 0.35f * pr)
+                    alpha = (1f - depth) * (1f - 0.35f * pr) * (1f - listMode)
                     translationY = rubber(pull.value)
                 }
                 .nestedScroll(gestureConnection)
@@ -435,53 +446,44 @@ fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStat
             }
         }
 
-        // ---------------- TUTTE LE APP ----------------
-        AnimatedVisibility(
-            visible = overlay == Overlay.ALL_APPS,
-            enter = fadeIn(Motion.enter(260)) + scaleIn(Motion.enter(400), initialScale = 0.94f),
-            exit = fadeOut(Motion.exit(180)) + scaleOut(Motion.exit(200), targetScale = 0.96f),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .graphicsLayer {
-                        scaleX = panelScale; scaleY = panelScale
-                        transformOrigin = TransformOrigin(if (settings.leftHanded) 0f else 1f, 0.5f)
-                    }
-                    .clip(RoundedCornerShape(panelCorner))
-                    .background(colors.scrim)
-                    .blockTouches()
-            ) {
-                AllAppsPanel(
-                    sections = sections,
-                    listState = allAppsList,
-                    activeLetter = null,
-                    notifications = state.notifications,
-                    showIcons = settings.showIcons,
-                    themedIcons = settings.themedIcons,
-                    onClick = { launchApp(it) },
-                    onLongClick = { actionsFor = it },
-                    contentPadding = PaddingValues(
-                        start = if (settings.leftHanded) letterSide + 8.dp else hiddenSide,
-                        end = if (settings.leftHanded) hiddenSide else letterSide + 8.dp,
-                        top = bars.calculateTopPadding() + 64.dp,
-                        bottom = bars.calculateBottomPadding() + 24.dp,
-                    ),
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(colors.scrim)
-                        .statusBarsPadding()
-                        .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
-                ) {
-                    Text("App", color = colors.onWallpaper, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-                    RoundIcon(Icons.Filled.Search) { overlay = Overlay.SEARCH }
-                    RoundIcon(Icons.Filled.Close) { closeAll() }
+        // ---------------- TUTTE LE APP (stessa pagina, nessun pannello) ----------------
+        // L'elenco è sempre composto (pronto all'istante) e sostituisce i preferiti con una
+        // dissolvenza breve, sopra lo stesso sfondo: si resta "nella stessa pagina".
+        val appsFloor = remember(threshold) {
+            object : NestedScrollConnection {
+                var pullDown = 0f
+                override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                    if (source == NestedScrollSource.UserInput && available.y > 0f) pullDown += available.y
+                    return Offset.Zero
+                }
+                override suspend fun onPreFling(available: Velocity): Velocity {
+                    // In cima all'elenco, tirando giù si torna ai preferiti
+                    if (pullDown > threshold || (pullDown > threshold / 3 && available.y > 2200f)) closeAll()
+                    pullDown = 0f
+                    return Velocity.Zero
                 }
             }
         }
+        AllAppsPanel(
+            sections = sections,
+            listState = allAppsList,
+            activeLetter = null,
+            notifications = state.notifications,
+            showIcons = settings.showIcons,
+            themedIcons = settings.themedIcons,
+            onClick = { launchApp(it) },
+            onLongClick = { actionsFor = it },
+            contentPadding = PaddingValues(
+                start = if (settings.leftHanded) letterSide else hiddenSide,
+                end = if (settings.leftHanded) hiddenSide else letterSide,
+                top = bars.calculateTopPadding() + 16.dp,
+                bottom = bars.calculateBottomPadding() + 24.dp,
+            ),
+            modifier = Modifier
+                .zIndex(if (overlay == Overlay.ALL_APPS) 1f else -1f)
+                .graphicsLayer { alpha = listMode }
+                .nestedScroll(appsFloor),
+        )
 
         // ---------------- SCROLLER (lettere visibili + lato opposto invisibile) ----------------
         val scrollerActive = overlay == Overlay.NONE || overlay == Overlay.ALL_APPS
@@ -503,6 +505,7 @@ fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStat
                 showLetters = lettersVisible,
                 modifier = Modifier
                     .align(if (settings.leftHanded) Alignment.CenterStart else Alignment.CenterEnd)
+                    .zIndex(2f)
                     .graphicsLayer { alpha = scrollerAlpha }
                     .then(scrollerPadding)
                     .padding(horizontal = 6.dp),
@@ -515,6 +518,7 @@ fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStat
                 showLetters = false,
                 modifier = Modifier
                     .align(if (settings.leftHanded) Alignment.CenterEnd else Alignment.CenterStart)
+                    .zIndex(2f)
                     .then(scrollerPadding),
                 onTouchStart = { overlay = Overlay.ALL_APPS },
                 onLetter = onLetter,

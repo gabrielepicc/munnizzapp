@@ -17,12 +17,12 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Build release APK (ottimizzato R8)
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleRelease
 
       - uses: actions/upload-artifact@v4
         with:
-          name: OndaLauncher-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: OndaLauncher-release
+          path: app/build/outputs/apk/release/*.apk
