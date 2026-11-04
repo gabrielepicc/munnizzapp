@@ -5,12 +5,14 @@ import android.content.pm.ShortcutInfo
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.gabrielepiccione.onda.data.AppInfo
+import com.gabrielepiccione.onda.data.CalendarEvent
 import com.gabrielepiccione.onda.data.ContactHit
 import com.gabrielepiccione.onda.data.ContactsRepository
 import com.gabrielepiccione.onda.data.NotificationItem
 import com.gabrielepiccione.onda.data.NotificationStore
 import com.gabrielepiccione.onda.data.Settings
 import com.gabrielepiccione.onda.data.normalizedForSearch
+import com.gabrielepiccione.onda.util.Calculator
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -32,10 +34,14 @@ data class LauncherState(
     val notifications: Map<String, List<NotificationItem>> = emptyMap(),
     val settings: Settings = Settings(),
     val loaded: Boolean = false,
-)
+) {
+    private val byKey: Map<String, AppInfo> by lazy { (allApps + hiddenApps).associateBy { it.key } }
+    fun app(key: String?): AppInfo? = key?.let { byKey[it] }
+}
 
 data class SearchResults(
     val query: String = "",
+    val calc: String? = null,
     val apps: List<AppInfo> = emptyList(),
     val contacts: List<ContactHit> = emptyList(),
 )
@@ -46,6 +52,8 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     val appsRepo = ondaApp.apps
     val settingsRepo = ondaApp.settings
     val widgets = ondaApp.widgets
+    val media = ondaApp.media
+    val calendar = ondaApp.calendar
     val contacts = ContactsRepository(app)
 
     private val collator = Collator.getInstance(Locale.getDefault()).apply { strength = Collator.PRIMARY }
@@ -63,25 +71,34 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
                 label = settings.renames[r.key] ?: r.label,
                 originalLabel = r.label,
                 icon = r.icon,
+                mono = r.mono,
                 isWorkProfile = r.isWorkProfile,
                 isFavorite = r.key in settings.favorites,
                 isHidden = r.key in settings.hidden,
+                swipeTarget = settings.swipeActions[r.key],
             )
         }.sortedWith { a, b -> collator.compare(a.label, b.label) }
 
         val byKey = all.associateBy { it.key }
-        val visibleNotifs = notifs.filterKeys { it !in settings.mutedNotifications }
         LauncherState(
             allApps = all.filterNot { it.isHidden },
             favorites = settings.favorites.mapNotNull { byKey[it] }.filterNot { it.isHidden },
             hiddenApps = all.filter { it.isHidden },
-            notifications = visibleNotifs,
+            notifications = notifs.filterKeys { it !in settings.mutedNotifications },
             settings = settings,
             loaded = raw.isNotEmpty(),
         )
     }.stateIn(viewModelScope, SharingStarted.Eagerly, LauncherState())
 
-    // --- Eventi "tasto Home premuto" per chiudere pannelli e tornare in cima ---
+    // --- Calendario ---
+    private val _nextEvent = MutableStateFlow<CalendarEvent?>(null)
+    val nextEvent: StateFlow<CalendarEvent?> = _nextEvent.asStateFlow()
+
+    fun refreshCalendar() {
+        viewModelScope.launch { _nextEvent.value = calendar.nextEvent() }
+    }
+
+    // --- Tasto Home premuto: chiude pannelli e torna in cima ---
     private val _homePressed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val homePressed: SharedFlow<Unit> = _homePressed
     fun onHomePressed() { _homePressed.tryEmit(Unit) }
@@ -93,12 +110,10 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSearch(query: String) {
         searchJob?.cancel()
-        val apps = filterApps(query)
-        _search.value = _search.value.copy(query = query, apps = apps)
+        _search.value = _search.value.copy(query = query, apps = filterApps(query), calc = Calculator.evaluate(query))
         searchJob = viewModelScope.launch {
             delay(120)
-            val hits = contacts.search(query)
-            _search.value = _search.value.copy(contacts = hits)
+            _search.value = _search.value.copy(contacts = contacts.search(query))
         }
     }
 
@@ -107,21 +122,21 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         _search.value = SearchResults()
     }
 
-    /** Ricerca app: prefisso > iniziali delle parole > contiene. Include le app nascoste. */
+    /** Ricerca app: prefisso > inizio parola > iniziali > contiene. Include le app nascoste. */
     private fun filterApps(query: String): List<AppInfo> {
         val q = query.normalizedForSearch().trim()
         if (q.isEmpty()) return emptyList()
         val s = state.value
-        val pool = s.allApps + s.hiddenApps
-        return pool.mapNotNull { app ->
+        return (s.allApps + s.hiddenApps).mapNotNull { app ->
             val label = app.label.normalizedForSearch()
-            val initials = label.split(' ', '-', '.', '_').filter { it.isNotEmpty() }.joinToString("") { it.take(1) }
+            val words = label.split(' ', '-', '.', '_', '(', ')').filter { it.isNotEmpty() }
+            val initials = words.joinToString("") { it.take(1) }
             val score = when {
                 label.startsWith(q) -> 0
-                label.split(' ').any { it.startsWith(q) } -> 1
-                initials.startsWith(q) -> 2
+                words.any { it.startsWith(q) } -> 1
+                q.length >= 2 && initials.startsWith(q) -> 2
                 label.contains(q) -> 3
-                app.packageName.contains(q) -> 4
+                q.length >= 3 && app.packageName.contains(q) -> 4
                 else -> null
             }
             score?.let { it to app }
@@ -136,6 +151,7 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     fun moveFavorite(app: AppInfo, delta: Int) = settingsRepo.moveFavorite(app.key, delta)
     fun setHidden(app: AppInfo, hidden: Boolean) = settingsRepo.setHidden(app.key, hidden)
     fun rename(app: AppInfo, label: String?) = settingsRepo.rename(app.key, label)
+    fun setSwipeAction(app: AppInfo, target: AppInfo?) = settingsRepo.setSwipeAction(app.key, target?.key)
     fun toggleMuted(app: AppInfo) = settingsRepo.toggleMuted(app.packageName)
     fun shortcuts(app: AppInfo): List<ShortcutInfo> = appsRepo.shortcutsFor(app)
     fun startShortcut(s: ShortcutInfo) = appsRepo.startShortcut(s)
@@ -149,10 +165,9 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     /** Al primo avvio mettiamo qualche app tra i preferiti per non partire da una home vuota. */
     fun seedFavoritesIfNeeded() {
         viewModelScope.launch {
-            val s = settingsRepo.current
-            if (s.onboardingDone) return@launch
+            if (settingsRepo.current.onboardingDone) return@launch
             val apps = state.value.allApps.ifEmpty { return@launch }
-            val wanted = listOf("phone", "dialer", "messag", "camera", "chrome", "browser", "whatsapp", "gallery", "photos")
+            val wanted = listOf("dialer", "phone", "messag", "camera", "chrome", "browser", "whatsapp", "photos", "gallery")
             val picks = wanted.mapNotNull { w -> apps.firstOrNull { it.packageName.contains(w, ignoreCase = true) } }
                 .distinctBy { it.key }
                 .take(6)

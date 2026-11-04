@@ -4,7 +4,10 @@ package com.gabrielepiccione.onda.ui
 
 import android.content.pm.ShortcutInfo
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PlayArrow
@@ -51,6 +55,11 @@ import com.gabrielepiccione.onda.data.AppInfo
 
 data class AppActions(
     val shortcuts: List<ShortcutInfo>,
+    val shortcutIcon: (ShortcutInfo) -> androidx.compose.ui.graphics.ImageBitmap?,
+    val swipeTarget: AppInfo?,
+    val allApps: List<AppInfo>,
+    val themedIcons: Boolean,
+    val onSetSwipe: (AppInfo?) -> Unit,
     val isMuted: Boolean,
     val favoriteIndex: Int,
     val favoriteCount: Int,
@@ -69,6 +78,7 @@ data class AppActions(
 fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var renaming by remember { mutableStateOf(false) }
+    var pickingSwipe by remember { mutableStateOf(false) }
     val colors = LocalOndaColors.current
 
     ModalBottomSheet(
@@ -85,10 +95,10 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
                 .padding(bottom = 12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
-                Image(app.icon, contentDescription = null, modifier = Modifier.size(44.dp))
+                AppIcon(app, 48.dp, actions.themedIcons)
                 Spacer(Modifier.width(16.dp))
                 Column {
-                    Text(app.label, fontSize = 22.sp, fontWeight = FontWeight.Medium)
+                    Text(app.label, style = MaterialTheme.typography.headlineSmall)
                     if (app.label != app.originalLabel) {
                         Text(app.originalLabel, fontSize = 13.sp, color = colors.onWallpaperMuted)
                     }
@@ -97,8 +107,21 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
 
             if (actions.shortcuts.isNotEmpty()) {
                 actions.shortcuts.forEach { sc ->
-                    ActionRow(Icons.Filled.PlayArrow, (sc.shortLabel ?: sc.longLabel ?: "").toString()) {
-                        actions.onShortcut(sc); onDismiss()
+                    val icon = remember(sc.id) { actions.shortcutIcon(sc) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 2.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+                            .background(colors.panelHigh)
+                            .clickable { actions.onShortcut(sc); onDismiss() }
+                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) {
+                        if (icon != null) Image(icon, null, Modifier.size(24.dp))
+                        else Icon(Icons.Filled.PlayArrow, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                        Spacer(Modifier.width(16.dp))
+                        Text((sc.shortLabel ?: sc.longLabel ?: "").toString(), style = MaterialTheme.typography.bodyLarge, color = colors.onWallpaper)
                     }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 6.dp, horizontal = 24.dp), color = colors.panelBorder)
@@ -113,6 +136,12 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
             if (app.isFavorite && actions.favoriteIndex in 0 until actions.favoriteCount - 1) {
                 ActionRow(Icons.Filled.KeyboardArrowDown, "Sposta giù") { actions.onMove(1) }
             }
+            if (app.isFavorite) {
+                ActionRow(
+                    Icons.Filled.KeyboardArrowRight,
+                    actions.swipeTarget?.let { "Scorri a destra: ${it.label}" } ?: "Imposta azione di scorrimento",
+                ) { pickingSwipe = true }
+            }
             ActionRow(Icons.Filled.Edit, "Rinomina") { renaming = true }
             ActionRow(Icons.Filled.Lock, if (app.isHidden) "Mostra nell'elenco" else "Nascondi") {
                 actions.onToggleHidden(); onDismiss()
@@ -126,6 +155,42 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
             ActionRow(Icons.Filled.Info, "Info app") { actions.onInfo(); onDismiss() }
             ActionRow(Icons.Filled.Delete, "Disinstalla") { actions.onUninstall(); onDismiss() }
         }
+    }
+
+    if (pickingSwipe) {
+        AlertDialog(
+            onDismissRequest = { pickingSwipe = false },
+            title = { Text("Scorrendo «${app.label}» verso destra apri…") },
+            text = {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                    item {
+                        Text(
+                            "Nessuna (espande le notifiche)",
+                            color = colors.onWallpaperMuted,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { actions.onSetSwipe(null); pickingSwipe = false }
+                                .padding(vertical = 12.dp),
+                        )
+                    }
+                    items(actions.allApps.size) { i ->
+                        val target = actions.allApps[i]
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { actions.onSetSwipe(target); pickingSwipe = false }
+                                .padding(vertical = 8.dp)
+                        ) {
+                            AppIcon(target, 30.dp, actions.themedIcons)
+                            Spacer(Modifier.width(12.dp))
+                            Text(target.label, style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { pickingSwipe = false }) { Text("Chiudi") } },
+        )
     }
 
     if (renaming) {
@@ -158,6 +223,6 @@ private fun ActionRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(18.dp))
-        Text(label, fontSize = 16.sp, color = colors.onWallpaper)
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = colors.onWallpaper)
     }
 }

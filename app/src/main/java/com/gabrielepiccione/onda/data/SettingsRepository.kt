@@ -5,21 +5,22 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import org.json.JSONArray
 import org.json.JSONObject
 
-/** Preferenze persistenti del launcher (SharedPreferences + StateFlow). */
+/** Preferenze persistenti del launcher, salvate come un unico JSON (comodo anche per backup/ripristino). */
 class SettingsRepository(context: Context) {
 
     private val prefs = context.getSharedPreferences("onda_settings", Context.MODE_PRIVATE)
 
-    private val _settings = MutableStateFlow(load())
+    private val _settings = MutableStateFlow(prefs.getString(K_JSON, null)?.let(::fromJson) ?: Settings())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
     val current: Settings get() = _settings.value
 
     fun edit(transform: (Settings) -> Settings) {
         _settings.update(transform)
-        save(_settings.value)
+        prefs.edit().putString(K_JSON, toJson(_settings.value).toString()).apply()
     }
 
     // --- Operazioni di comodo ---
@@ -52,6 +53,12 @@ class SettingsRepository(context: Context) {
         s.copy(renames = map)
     }
 
+    fun setSwipeAction(key: String, target: String?) = edit { s ->
+        val map = s.swipeActions.toMutableMap()
+        if (target == null) map.remove(key) else map[key] = target
+        s.copy(swipeActions = map)
+    }
+
     fun toggleMuted(packageName: String) = edit { s ->
         s.copy(
             mutedNotifications = if (packageName in s.mutedNotifications) s.mutedNotifications - packageName
@@ -62,68 +69,79 @@ class SettingsRepository(context: Context) {
     fun addWidget(id: Int) = edit { it.copy(widgetIds = it.widgetIds + id) }
     fun removeWidget(id: Int) = edit { it.copy(widgetIds = it.widgetIds - id) }
 
+    // --- Backup ---
+
+    /** JSON delle impostazioni (senza i widget, che sono legati a questo dispositivo). */
+    fun exportJson(): String = toJson(current.copy(widgetIds = emptyList())).toString(2)
+
+    fun importJson(json: String): Boolean {
+        val parsed = runCatching { fromJson(json) }.getOrNull() ?: return false
+        edit { parsed.copy(widgetIds = it.widgetIds, onboardingDone = true) }
+        return true
+    }
+
     // --- Serializzazione ---
 
-    private fun load(): Settings {
+    private fun toJson(s: Settings): JSONObject = JSONObject().apply {
+        put("version", 2)
+        put("favorites", JSONArray(s.favorites))
+        put("hidden", JSONArray(s.hidden.toList()))
+        put("renames", JSONObject(s.renames as Map<*, *>))
+        put("swipeActions", JSONObject(s.swipeActions as Map<*, *>))
+        put("muted", JSONArray(s.mutedNotifications.toList()))
+        put("themeMode", s.themeMode.name)
+        put("dynamicColor", s.dynamicColor)
+        put("accent", s.accent)
+        put("font", s.font.name)
+        put("iconPack", s.iconPack)
+        put("themedIcons", s.themedIcons)
+        put("showIcons", s.showIcons)
+        put("textScale", s.textScale.toDouble())
+        put("showClock", s.showClock)
+        put("showCalendar", s.showCalendar)
+        put("showMedia", s.showMedia)
+        put("wallpaperDim", s.wallpaperDim.toDouble())
+        put("leftHanded", s.leftHanded)
+        put("doubleTapLock", s.doubleTapLock)
+        put("haptics", s.haptics)
+        put("widgets", JSONArray(s.widgetIds))
+        put("onboardingDone", s.onboardingDone)
+    }
+
+    private fun fromJson(json: String): Settings {
+        val o = JSONObject(json)
         val d = Settings()
+        fun strings(name: String): List<String> =
+            o.optJSONArray(name)?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList()
+        fun map(name: String): Map<String, String> =
+            o.optJSONObject(name)?.let { m -> m.keys().asSequence().associateWith { m.getString(it) } } ?: emptyMap()
         return Settings(
-            favorites = prefs.getString(K_FAV, null)?.split(SEP)?.filter { it.isNotBlank() } ?: d.favorites,
-            hidden = prefs.getStringSet(K_HIDDEN, null)?.toSet() ?: d.hidden,
-            renames = prefs.getString(K_RENAMES, null)?.let(::decodeMap) ?: d.renames,
-            mutedNotifications = prefs.getStringSet(K_MUTED, null)?.toSet() ?: d.mutedNotifications,
-            themeMode = prefs.getString(K_THEME, null)
-                ?.let { name -> ThemeMode.entries.firstOrNull { it.name == name } } ?: d.themeMode,
-            accent = prefs.getLong(K_ACCENT, d.accent),
-            showIcons = prefs.getBoolean(K_ICONS, d.showIcons),
-            textScale = prefs.getFloat(K_TEXT, d.textScale),
-            showClock = prefs.getBoolean(K_CLOCK, d.showClock),
-            wallpaperDim = prefs.getFloat(K_DIM, d.wallpaperDim),
-            leftHanded = prefs.getBoolean(K_LEFT, d.leftHanded),
-            widgetIds = prefs.getString(K_WIDGETS, null)
-                ?.split(SEP)?.mapNotNull { it.toIntOrNull() } ?: d.widgetIds,
-            onboardingDone = prefs.getBoolean(K_ONBOARD, d.onboardingDone),
+            favorites = strings("favorites"),
+            hidden = strings("hidden").toSet(),
+            renames = map("renames"),
+            swipeActions = map("swipeActions"),
+            mutedNotifications = strings("muted").toSet(),
+            themeMode = ThemeMode.entries.firstOrNull { it.name == o.optString("themeMode") } ?: d.themeMode,
+            dynamicColor = o.optBoolean("dynamicColor", d.dynamicColor),
+            accent = o.optLong("accent", d.accent),
+            font = FontChoice.entries.firstOrNull { it.name == o.optString("font") } ?: d.font,
+            iconPack = o.optString("iconPack", d.iconPack),
+            themedIcons = o.optBoolean("themedIcons", d.themedIcons),
+            showIcons = o.optBoolean("showIcons", d.showIcons),
+            textScale = o.optDouble("textScale", d.textScale.toDouble()).toFloat(),
+            showClock = o.optBoolean("showClock", d.showClock),
+            showCalendar = o.optBoolean("showCalendar", d.showCalendar),
+            showMedia = o.optBoolean("showMedia", d.showMedia),
+            wallpaperDim = o.optDouble("wallpaperDim", d.wallpaperDim.toDouble()).toFloat(),
+            leftHanded = o.optBoolean("leftHanded", d.leftHanded),
+            doubleTapLock = o.optBoolean("doubleTapLock", d.doubleTapLock),
+            haptics = o.optBoolean("haptics", d.haptics),
+            widgetIds = o.optJSONArray("widgets")?.let { a -> (0 until a.length()).map { a.getInt(it) } } ?: emptyList(),
+            onboardingDone = o.optBoolean("onboardingDone", d.onboardingDone),
         )
     }
 
-    private fun save(s: Settings) {
-        prefs.edit()
-            .putString(K_FAV, s.favorites.joinToString(SEP))
-            .putStringSet(K_HIDDEN, s.hidden)
-            .putString(K_RENAMES, encodeMap(s.renames))
-            .putStringSet(K_MUTED, s.mutedNotifications)
-            .putString(K_THEME, s.themeMode.name)
-            .putLong(K_ACCENT, s.accent)
-            .putBoolean(K_ICONS, s.showIcons)
-            .putFloat(K_TEXT, s.textScale)
-            .putBoolean(K_CLOCK, s.showClock)
-            .putFloat(K_DIM, s.wallpaperDim)
-            .putBoolean(K_LEFT, s.leftHanded)
-            .putString(K_WIDGETS, s.widgetIds.joinToString(SEP))
-            .putBoolean(K_ONBOARD, s.onboardingDone)
-            .apply()
-    }
-
-    private fun encodeMap(map: Map<String, String>): String = JSONObject(map as Map<*, *>).toString()
-
-    private fun decodeMap(json: String): Map<String, String> = runCatching {
-        val obj = JSONObject(json)
-        obj.keys().asSequence().associateWith { obj.getString(it) }
-    }.getOrDefault(emptyMap())
-
     private companion object {
-        const val SEP = "\n"
-        const val K_FAV = "favorites"
-        const val K_HIDDEN = "hidden"
-        const val K_RENAMES = "renames"
-        const val K_MUTED = "muted"
-        const val K_THEME = "theme"
-        const val K_ACCENT = "accent"
-        const val K_ICONS = "show_icons"
-        const val K_TEXT = "text_scale"
-        const val K_CLOCK = "show_clock"
-        const val K_DIM = "wallpaper_dim"
-        const val K_LEFT = "left_handed"
-        const val K_WIDGETS = "widgets"
-        const val K_ONBOARD = "onboarding_done"
+        const val K_JSON = "settings_json"
     }
 }

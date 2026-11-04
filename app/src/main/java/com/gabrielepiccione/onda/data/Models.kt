@@ -13,6 +13,8 @@ data class RawApp(
     val user: UserHandle,
     val label: String,
     val icon: ImageBitmap,
+    /** Maschera monocromatica per le icone a tema (Android 13+), se l'app la fornisce. */
+    val mono: ImageBitmap?,
     val isWorkProfile: Boolean,
 )
 
@@ -24,9 +26,12 @@ data class AppInfo(
     val label: String,
     val originalLabel: String,
     val icon: ImageBitmap,
+    val mono: ImageBitmap?,
     val isWorkProfile: Boolean,
     val isFavorite: Boolean,
     val isHidden: Boolean,
+    /** Chiave dell'app aperta scorrendo la riga verso destra, se impostata. */
+    val swipeTarget: String?,
 ) {
     val packageName: String get() = component.packageName
     val section: Char get() = sectionOf(label)
@@ -50,20 +55,44 @@ data class ContactHit(
     val photoUri: String?,
 )
 
+data class CalendarEvent(
+    val title: String,
+    val begin: Long,
+    val allDay: Boolean,
+    val eventId: Long,
+)
+
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
+enum class FontChoice(val label: String) {
+    SYSTEM("Sistema"),
+    SANS("Sans"),
+    SERIF("Serif"),
+    MONO("Mono"),
+    ROUNDED("Corsivo"),
+}
 
 data class Settings(
     val favorites: List<String> = emptyList(),
     val hidden: Set<String> = emptySet(),
     val renames: Map<String, String> = emptyMap(),
+    val swipeActions: Map<String, String> = emptyMap(),
     val mutedNotifications: Set<String> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val dynamicColor: Boolean = true,
     val accent: Long = 0xFF7FE3D1,
+    val font: FontChoice = FontChoice.SYSTEM,
+    val iconPack: String = "",
+    val themedIcons: Boolean = false,
     val showIcons: Boolean = true,
     val textScale: Float = 1f,
     val showClock: Boolean = true,
-    val wallpaperDim: Float = 0.25f,
+    val showCalendar: Boolean = true,
+    val showMedia: Boolean = true,
+    val wallpaperDim: Float = 0.2f,
     val leftHanded: Boolean = false,
+    val doubleTapLock: Boolean = false,
+    val haptics: Boolean = true,
     val widgetIds: List<Int> = emptyList(),
     val onboardingDone: Boolean = false,
 )

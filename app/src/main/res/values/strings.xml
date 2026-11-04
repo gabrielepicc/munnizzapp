@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Onda</string>
+    <string name="accessibility_label">Onda – blocco schermo</string>
+    <string name="accessibility_description">Permette a Onda di bloccare lo schermo quando tocchi due volte uno spazio vuoto della home. Onda non legge né raccoglie il contenuto dello schermo.</string>
 </resources>

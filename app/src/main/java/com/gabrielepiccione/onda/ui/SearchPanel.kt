@@ -49,6 +49,7 @@ import com.gabrielepiccione.onda.data.ContactHit
 fun SearchPanel(
     results: SearchResults,
     showIcons: Boolean,
+    themedIcons: Boolean,
     contactsPermission: Boolean,
     onQueryChange: (String) -> Unit,
     onApp: (AppInfo) -> Unit,
@@ -69,7 +70,7 @@ fun SearchPanel(
     Column(
         Modifier
             .fillMaxSize()
-            .background(colors.scrim.copy(alpha = 0.92f))
+            .background(colors.scrim)
             .blockTouches()
             .statusBarsPadding()
             .imePadding()
@@ -81,7 +82,7 @@ fun SearchPanel(
                 .padding(top = 16.dp, bottom = 8.dp)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
-                .background(colors.panel)
+                .background(colors.panelHigh)
                 .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
         ) {
             Icon(Icons.Filled.Search, contentDescription = null, tint = colors.onWallpaperMuted)
@@ -119,11 +120,29 @@ fun SearchPanel(
         }
 
         LazyColumn(Modifier.fillMaxSize()) {
+            results.calc?.let { value ->
+                item(key = "calc") {
+                    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(colors.accentContainer)
+                            .clickable { clipboard.setText(androidx.compose.ui.text.AnnotatedString(value)) }
+                            .padding(horizontal = 18.dp, vertical = 14.dp)
+                    ) {
+                        Text("= $value", color = colors.onAccentContainer, fontSize = 30.sp, fontWeight = FontWeight.Medium)
+                        Text("Tocca per copiare", color = colors.onAccentContainer.copy(alpha = 0.7f), fontSize = 12.sp)
+                    }
+                }
+            }
             items(results.apps, key = { it.key }) { app ->
                 AppListRow(
                     app = app,
                     hasNotification = false,
                     showIcon = showIcons,
+                    themedIcons = themedIcons,
                     highlighted = app == results.apps.firstOrNull(),
                     onClick = { onApp(app) },
                     onLongClick = { onAppLongClick(app) },

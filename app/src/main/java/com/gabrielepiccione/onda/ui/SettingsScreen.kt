@@ -1,5 +1,6 @@
 package com.gabrielepiccione.onda.ui
 
+import android.os.Build
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -19,91 +20,106 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.gabrielepiccione.onda.data.AppInfo
+import com.gabrielepiccione.onda.data.FontChoice
+import com.gabrielepiccione.onda.data.IconPacks
 import com.gabrielepiccione.onda.data.Settings
 import com.gabrielepiccione.onda.data.ThemeMode
 import com.gabrielepiccione.onda.data.WidgetManager
+
+data class SettingsStatus(
+    val isDefaultLauncher: Boolean,
+    val notificationAccess: Boolean,
+    val calendarPermission: Boolean,
+    val accessibilityEnabled: Boolean,
+)
+
+interface SettingsActions {
+    fun edit(transform: (Settings) -> Settings)
+    fun requestDefault()
+    fun notificationAccess()
+    fun calendarPermission()
+    fun accessibility()
+    fun addWidget()
+    fun removeWidget(id: Int)
+    fun unhide(app: AppInfo)
+    fun wallpaper()
+    fun exportBackup()
+    fun importBackup()
+    fun close()
+}
 
 @Composable
 fun SettingsScreen(
     settings: Settings,
     hiddenApps: List<AppInfo>,
-    isDefaultLauncher: Boolean,
-    notificationAccess: Boolean,
+    status: SettingsStatus,
     widgets: WidgetManager,
-    onEdit: ((Settings) -> Settings) -> Unit,
-    onRequestDefault: () -> Unit,
-    onNotificationAccess: () -> Unit,
-    onAddWidget: () -> Unit,
-    onRemoveWidget: (Int) -> Unit,
-    onUnhide: (AppInfo) -> Unit,
-    onWallpaper: () -> Unit,
-    onClose: () -> Unit,
+    actions: SettingsActions,
 ) {
     val colors = LocalOndaColors.current
-    val pm = LocalContext.current.packageManager
+    val context = LocalContext.current
+    val pm = context.packageManager
+    var iconPackDialog by remember { mutableStateOf(false) }
+    val onEdit = actions::edit
+
     Column(
         Modifier
             .fillMaxSize()
-            .background(colors.panel)
+            .background(colors.scrim)
             .blockTouches()
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp, vertical = 12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 8.dp)) {
             Box(
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClose)
+                modifier = Modifier.size(48.dp).clip(CircleShape).clickable { actions.close() }
             ) {
                 @Suppress("DEPRECATION")
                 Icon(Icons.Filled.ArrowBack, contentDescription = "Indietro", tint = colors.onWallpaper)
             }
             Spacer(Modifier.width(8.dp))
-            Text("Impostazioni", fontSize = 26.sp, color = colors.onWallpaper, fontWeight = FontWeight.Medium)
+            Text("Impostazioni", style = MaterialTheme.typography.headlineMedium, color = colors.onWallpaper)
         }
 
         Group("Configurazione") {
-            StatusRow(
-                title = "Launcher predefinito",
-                ok = isDefaultLauncher,
-                okText = "Onda è la tua home",
-                koText = "Imposta Onda come home",
-                onClick = onRequestDefault,
-            )
-            StatusRow(
-                title = "Notifiche in home",
-                ok = notificationAccess,
-                okText = "Accesso alle notifiche attivo",
-                koText = "Concedi l'accesso alle notifiche",
-                onClick = onNotificationAccess,
-            )
+            StatusRow("Launcher predefinito", status.isDefaultLauncher, "Onda è la tua home", "Imposta Onda come home") { actions.requestDefault() }
+            StatusRow("Notifiche e musica in home", status.notificationAccess, "Accesso alle notifiche attivo", "Concedi l'accesso alle notifiche") { actions.notificationAccess() }
+            StatusRow("Calendario", status.calendarPermission, "Mostra il prossimo evento", "Consenti la lettura del calendario") { actions.calendarPermission() }
         }
 
-        Group("Aspetto") {
+        Group("Colori e stile") {
             Label("Tema")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(ThemeMode.SYSTEM to "Sistema", ThemeMode.LIGHT to "Chiaro", ThemeMode.DARK to "Scuro").forEach { (mode, label) ->
@@ -114,95 +130,149 @@ fun SettingsScreen(
                     )
                 }
             }
-            Spacer(Modifier.height(14.dp))
-            Label("Colore d'accento")
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                AccentChoices.forEach { argb ->
-                    val selected = settings.accent == argb
-                    Box(
-                        contentAlignment = Alignment.Center,
-                        modifier = Modifier
-                            .size(38.dp)
-                            .clip(CircleShape)
-                            .background(Color(argb))
-                            .border(BorderStroke(if (selected) 3.dp else 0.dp, colors.onWallpaper), CircleShape)
-                            .clickable { onEdit { it.copy(accent = argb) } }
-                    ) {
-                        if (selected) Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                SwitchRow("Colori dinamici (Material You)", "Prende i colori dallo sfondo", settings.dynamicColor) { v -> onEdit { it.copy(dynamicColor = v) } }
+            }
+            if (!settings.dynamicColor || Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+                Label("Colore d'accento")
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                    AccentChoices.forEach { argb ->
+                        val selected = settings.accent == argb
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(argb))
+                                .border(BorderStroke(if (selected) 3.dp else 0.dp, colors.onWallpaper), CircleShape)
+                                .clickable { onEdit { it.copy(accent = argb) } }
+                        ) {
+                            if (selected) Icon(Icons.Filled.Check, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            SwitchRow("Mostra icone", settings.showIcons) { v -> onEdit { it.copy(showIcons = v) } }
-            SwitchRow("Mostra orologio e data", settings.showClock) { v -> onEdit { it.copy(showClock = v) } }
-            SwitchRow("Scroller a sinistra (mancini)", settings.leftHanded) { v -> onEdit { it.copy(leftHanded = v) } }
+            Label("Carattere")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                FontChoice.entries.forEach { f ->
+                    FilterChip(selected = settings.font == f, onClick = { onEdit { it.copy(font = f) } }, label = { Text(f.label) })
+                }
+            }
+            Spacer(Modifier.height(8.dp))
             Label("Dimensione testo")
-            Slider(
-                value = settings.textScale,
-                onValueChange = { v -> onEdit { it.copy(textScale = v) } },
-                valueRange = 0.8f..1.3f,
-                steps = 4,
-            )
+            Slider(value = settings.textScale, onValueChange = { v -> onEdit { it.copy(textScale = v) } }, valueRange = 0.8f..1.3f, steps = 4)
             Label("Oscuramento sfondo")
-            Slider(
-                value = settings.wallpaperDim,
-                onValueChange = { v -> onEdit { it.copy(wallpaperDim = v) } },
-                valueRange = 0f..0.8f,
+            Slider(value = settings.wallpaperDim, onValueChange = { v -> onEdit { it.copy(wallpaperDim = v) } }, valueRange = 0f..0.8f)
+            TextButton(onClick = { actions.wallpaper() }) { Text("Cambia sfondo…") }
+        }
+
+        Group("Icone") {
+            SwitchRow("Mostra icone", null, settings.showIcons) { v -> onEdit { it.copy(showIcons = v) } }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                SwitchRow("Icone a tema", "Icone monocromatiche nei colori del tema (se l'app le supporta)", settings.themedIcons) { v -> onEdit { it.copy(themedIcons = v) } }
+            }
+            val packLabel = remember(settings.iconPack) {
+                if (settings.iconPack.isBlank()) "Predefinito di sistema"
+                else runCatching { pm.getApplicationLabel(pm.getApplicationInfo(settings.iconPack, 0)).toString() }.getOrDefault(settings.iconPack)
+            }
+            ClickRow("Icon pack", packLabel) { iconPackDialog = true }
+        }
+
+        Group("Home") {
+            SwitchRow("Orologio e data", null, settings.showClock) { v -> onEdit { it.copy(showClock = v) } }
+            SwitchRow("Prossimo evento", "Dal calendario, nelle prossime 24 ore", settings.showCalendar) { v -> onEdit { it.copy(showCalendar = v) } }
+            SwitchRow("Player musicale", "Controlli della musica in riproduzione", settings.showMedia) { v -> onEdit { it.copy(showMedia = v) } }
+            SwitchRow("Scroller a sinistra", "Modalità mancini", settings.leftHanded) { v -> onEdit { it.copy(leftHanded = v) } }
+        }
+
+        Group("Gesti e feedback") {
+            SwitchRow(
+                "Doppio tocco per bloccare",
+                if (status.accessibilityEnabled) "Tocca due volte uno spazio vuoto della home" else "Richiede di attivare il servizio di accessibilità di Onda",
+                settings.doubleTapLock,
+            ) { v ->
+                onEdit { it.copy(doubleTapLock = v) }
+                if (v && !status.accessibilityEnabled) actions.accessibility()
+            }
+            SwitchRow("Vibrazione", "Feedback aptico su scroller e pressioni lunghe", settings.haptics) { v -> onEdit { it.copy(haptics = v) } }
+            Text(
+                "Scorri giù: notifiche · Scorri su: ricerca · Scorri a destra su un preferito: azione rapida · Tieni premuto: opzioni",
+                color = colors.onWallpaperMuted,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 6.dp),
             )
-            TextButton(onClick = onWallpaper) { Text("Cambia sfondo…") }
         }
 
         Group("Widget") {
             if (settings.widgetIds.isEmpty()) {
-                Text("Nessun widget in home.", color = colors.onWallpaperMuted, fontSize = 14.sp)
+                Text("Nessun widget in home.", color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodyMedium)
             }
             settings.widgetIds.forEach { id ->
                 val info = widgets.infoFor(id)
                 val label: String? = info?.let { i -> runCatching { i.loadLabel(pm) }.getOrNull() }
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Text(
-                        label ?: info?.provider?.className?.substringAfterLast('.') ?: "Widget #$id",
-                        color = colors.onWallpaper,
-                        fontSize = 15.sp,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = { onRemoveWidget(id) }) { Text("Rimuovi") }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(label ?: "Widget #$id", color = colors.onWallpaper, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { actions.removeWidget(id) }) { Text("Rimuovi") }
                 }
             }
-            OutlinedButton(onClick = onAddWidget, modifier = Modifier.padding(top = 6.dp)) { Text("Aggiungi widget") }
+            FilledTonalButton(onClick = { actions.addWidget() }, modifier = Modifier.padding(top = 6.dp)) { Text("Aggiungi widget") }
         }
 
         Group("App nascoste") {
             if (hiddenApps.isEmpty()) {
-                Text("Nessuna app nascosta. Tieni premuta un'app per nasconderla.", color = colors.onWallpaperMuted, fontSize = 14.sp)
+                Text("Nessuna app nascosta. Tieni premuta un'app per nasconderla.", color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodyMedium)
             }
             hiddenApps.forEach { app ->
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Image(app.icon, null, Modifier.size(30.dp))
-                    Spacer(Modifier.width(12.dp))
-                    Text(app.label, color = colors.onWallpaper, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { onUnhide(app) }) { Text("Mostra") }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                    Image(app.icon, null, Modifier.size(32.dp))
+                    Spacer(Modifier.width(14.dp))
+                    Text(app.label, color = colors.onWallpaper, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { actions.unhide(app) }) { Text("Mostra") }
                 }
             }
         }
 
-        Group("Gesti") {
-            Text(
-                "• Trascina sulle lettere a lato per sfogliare tutte le app\n" +
-                    "• Scorri verso l'alto in home per cercare\n" +
-                    "• Scorri verso il basso per aprire le notifiche\n" +
-                    "• Tieni premuto su un'app per le opzioni, su uno spazio vuoto per le impostazioni",
-                color = colors.onWallpaperMuted,
-                fontSize = 14.sp,
-                lineHeight = 22.sp,
-            )
+        Group("Backup") {
+            Text("Salva preferiti, nomi, nascoste e aspetto in un file, e ripristinali su un altro telefono.", color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodyMedium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 10.dp)) {
+                FilledTonalButton(onClick = { actions.exportBackup() }) { Text("Esporta") }
+                OutlinedButton(onClick = { actions.importBackup() }) { Text("Ripristina") }
+            }
         }
 
         Text(
-            "Onda 0.1 · launcher minimale",
+            "Onda 0.2 · launcher minimale",
             color = colors.onWallpaperMuted,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(vertical = 24.dp),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(vertical = 28.dp, horizontal = 8.dp),
+        )
+    }
+
+    if (iconPackDialog) {
+        val packs = remember { IconPacks.installed(context) }
+        AlertDialog(
+            onDismissRequest = { iconPackDialog = false },
+            title = { Text("Icon pack") },
+            text = {
+                Column {
+                    ChoiceRow("Predefinito di sistema", settings.iconPack.isBlank()) {
+                        onEdit { it.copy(iconPack = "") }; iconPackDialog = false
+                    }
+                    packs.forEach { p ->
+                        ChoiceRow(p.label, settings.iconPack == p.packageName) {
+                            onEdit { it.copy(iconPack = p.packageName) }; iconPackDialog = false
+                        }
+                    }
+                    if (packs.isEmpty()) {
+                        Text(
+                            "Nessun icon pack installato. Scaricane uno dal Play Store (compatibile con Nova/ADW).",
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { iconPackDialog = false }) { Text("Chiudi") } },
         )
     }
 }
@@ -213,35 +283,70 @@ private fun Group(title: String, content: @Composable () -> Unit) {
     Text(
         title,
         color = colors.accent,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.padding(top = 26.dp, bottom = 8.dp),
+        style = MaterialTheme.typography.titleSmall,
+        modifier = Modifier.padding(start = 8.dp, top = 24.dp, bottom = 8.dp),
     )
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(colors.panelBorder)
-            .padding(16.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(colors.panel)
+            .padding(horizontal = 18.dp, vertical = 14.dp)
     ) { content() }
 }
 
 @Composable
 private fun Label(text: String) {
-    Text(text, color = LocalOndaColors.current.onWallpaper, fontSize = 15.sp, modifier = Modifier.padding(bottom = 6.dp))
+    Text(text, color = LocalOndaColors.current.onWallpaper, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp))
 }
 
 @Composable
-private fun SwitchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+private fun SwitchRow(text: String, sub: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = LocalOndaColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
             .clickable { onChange(!checked) }
-            .padding(vertical = 6.dp)
+            .padding(vertical = 8.dp)
     ) {
-        Text(text, color = LocalOndaColors.current.onWallpaper, fontSize = 15.sp, modifier = Modifier.weight(1f))
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(text, color = colors.onWallpaper, style = MaterialTheme.typography.bodyLarge)
+            if (sub != null) Text(sub, color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodySmall)
+        }
         Switch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun ClickRow(text: String, value: String, onClick: () -> Unit) {
+    val colors = LocalOndaColors.current
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+    ) {
+        Text(text, color = colors.onWallpaper, style = MaterialTheme.typography.bodyLarge)
+        Text(value, color = colors.accent, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
+private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 10.dp)
+    ) {
+        androidx.compose.material3.RadioButton(selected = selected, onClick = onClick)
+        Spacer(Modifier.width(8.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -252,15 +357,24 @@ private fun StatusRow(title: String, ok: Boolean, okText: String, koText: String
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp)
     ) {
-        Box(Modifier.size(10.dp).clip(CircleShape).background(if (ok) colors.accent else Color(0xFFFF8A7A)))
+        Box(
+            contentAlignment = Alignment.Center,
+            modifier = Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(if (ok) colors.accentContainer else MaterialTheme.colorScheme.errorContainer)
+        ) {
+            if (ok) Icon(Icons.Filled.Check, null, tint = colors.onAccentContainer, modifier = Modifier.size(16.dp))
+            else Text("!", color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.labelLarge)
+        }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, color = colors.onWallpaper, fontSize = 15.sp)
-            Text(if (ok) okText else koText, color = colors.onWallpaperMuted, fontSize = 13.sp)
+            Text(title, color = colors.onWallpaper, style = MaterialTheme.typography.bodyLarge)
+            Text(if (ok) okText else koText, color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodySmall)
         }
     }
 }

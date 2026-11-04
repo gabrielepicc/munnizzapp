@@ -4,7 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,27 +20,49 @@ import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gabrielepiccione.onda.data.NotificationStore
 import com.gabrielepiccione.onda.data.WidgetManager
+import com.gabrielepiccione.onda.service.OndaAccessibilityService
 import com.gabrielepiccione.onda.ui.HomeCallbacks
 import com.gabrielepiccione.onda.ui.HomeScreen
+import com.gabrielepiccione.onda.ui.HomeStatus
 import com.gabrielepiccione.onda.ui.LocalOndaColors
 import com.gabrielepiccione.onda.ui.OndaTheme
 import com.gabrielepiccione.onda.util.SystemActions
+import java.time.LocalDate
 
 class MainActivity : ComponentActivity(), HomeCallbacks {
 
     private val vm: LauncherViewModel by viewModels()
-    private val widgets: WidgetManager get() = (application as OndaApp).widgets
+    private val ondaApp: OndaApp get() = application as OndaApp
+    private val widgets: WidgetManager get() = ondaApp.widgets
 
-    private var notificationAccess by mutableStateOf(false)
-    private var isDefaultLauncher by mutableStateOf(false)
-    private var contactsPermission by mutableStateOf(false)
+    private var status by mutableStateOf(HomeStatus(false, false, false, false, false))
 
     /** Id del widget in attesa di consenso/configurazione. */
     private var pendingWidgetId = -1
 
     private val contactsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        contactsPermission = granted
+        refreshStatus()
         if (granted) vm.updateSearch(vm.search.value.query)
+    }
+
+    private val calendarLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        refreshStatus()
+        if (granted) vm.refreshCalendar()
+    }
+
+    private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri: Uri? ->
+        uri ?: return@registerForActivityResult
+        val ok = runCatching {
+            contentResolver.openOutputStream(uri)?.use { it.write(vm.settingsRepo.exportJson().toByteArray()) }
+        }.isSuccess
+        toast(if (ok) "Backup salvato" else "Impossibile salvare il backup")
+    }
+
+    private val importLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        uri ?: return@registerForActivityResult
+        val text = runCatching { contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+        val ok = text != null && vm.settingsRepo.importJson(text)
+        toast(if (ok) "Impostazioni ripristinate" else "File di backup non valido")
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,13 +80,7 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
                         isAppearanceLightNavigationBars = !dark
                     }
                 }
-                HomeScreen(
-                    vm = vm,
-                    callbacks = this,
-                    notificationAccess = notificationAccess,
-                    isDefaultLauncher = isDefaultLauncher,
-                    contactsPermission = contactsPermission,
-                )
+                HomeScreen(vm = vm, callbacks = this, status = status)
             }
         }
     }
@@ -78,14 +97,24 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
 
     override fun onResume() {
         super.onResume()
-        notificationAccess = NotificationStore.isPermissionGranted(this)
-        isDefaultLauncher = SystemActions.isDefaultLauncher(this)
-        contactsPermission = vm.contacts.hasPermission()
+        refreshStatus()
+        if (status.notificationAccess) ondaApp.media.start()
+        vm.refreshCalendar()
+    }
+
+    private fun refreshStatus() {
+        status = HomeStatus(
+            notificationAccess = NotificationStore.isPermissionGranted(this),
+            isDefaultLauncher = SystemActions.isDefaultLauncher(this),
+            contactsPermission = vm.contacts.hasPermission(),
+            calendarPermission = vm.calendar.hasPermission(),
+            accessibilityEnabled = OndaAccessibilityService.isEnabled,
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Premuto il tasto Home mentre il launcher è già in primo piano
+        // Tasto Home premuto mentre il launcher è già in primo piano
         if (intent.action == Intent.ACTION_MAIN) vm.onHomePressed()
     }
 
@@ -94,19 +123,28 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
         outState.putInt(KEY_PENDING, pendingWidgetId)
     }
 
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+
     // ---------------- HomeCallbacks ----------------
 
-    override fun requestContactsPermission() {
-        contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
-    }
+    override fun requestContactsPermission() = contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
 
-    override fun requestDefaultLauncher() {
-        SystemActions.requestDefaultLauncher(this)
-    }
+    override fun requestCalendarPermission() = calendarLauncher.launch(Manifest.permission.READ_CALENDAR)
+
+    override fun requestDefaultLauncher() = SystemActions.requestDefaultLauncher(this)
 
     override fun openNotificationAccess() {
         runCatching { startActivity(NotificationStore.permissionIntent(this)) }
     }
+
+    override fun openAccessibilitySettings() {
+        toast("Attiva «Onda – blocco schermo»")
+        runCatching { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+    }
+
+    override fun exportBackup() = exportLauncher.launch("onda-backup-${LocalDate.now()}.json")
+
+    override fun importBackup() = importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
 
     @Suppress("DEPRECATION")
     override fun pickWidget(provider: WidgetManager.Provider) {

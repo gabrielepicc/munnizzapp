@@ -2,17 +2,21 @@
 
 package com.gabrielepiccione.onda.ui
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -22,7 +26,6 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,11 +40,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -50,7 +55,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -60,53 +64,64 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.gabrielepiccione.onda.LauncherViewModel
 import com.gabrielepiccione.onda.data.AppInfo
 import com.gabrielepiccione.onda.data.NotificationStore
+import com.gabrielepiccione.onda.data.WidgetManager
+import com.gabrielepiccione.onda.service.OndaAccessibilityService
 import com.gabrielepiccione.onda.util.SystemActions
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 
 enum class Overlay { NONE, ALL_APPS, SEARCH, SETTINGS }
 
 /** Azioni che richiedono l'Activity (permessi, risultati di altre schermate). */
 interface HomeCallbacks {
     fun requestContactsPermission()
+    fun requestCalendarPermission()
     fun requestDefaultLauncher()
     fun openNotificationAccess()
-    fun pickWidget(provider: com.gabrielepiccione.onda.data.WidgetManager.Provider)
+    fun openAccessibilitySettings()
+    fun pickWidget(provider: WidgetManager.Provider)
+    fun exportBackup()
+    fun importBackup()
 }
 
+data class HomeStatus(
+    val notificationAccess: Boolean,
+    val isDefaultLauncher: Boolean,
+    val contactsPermission: Boolean,
+    val calendarPermission: Boolean,
+    val accessibilityEnabled: Boolean,
+)
+
 @Composable
-fun HomeScreen(
-    vm: LauncherViewModel,
-    callbacks: HomeCallbacks,
-    notificationAccess: Boolean,
-    isDefaultLauncher: Boolean,
-    contactsPermission: Boolean,
-) {
+fun HomeScreen(vm: LauncherViewModel, callbacks: HomeCallbacks, status: HomeStatus) {
     val state by vm.state.collectAsStateWithLifecycle()
     val search by vm.search.collectAsStateWithLifecycle()
+    val media by vm.media.media.collectAsStateWithLifecycle()
+    val nextEvent by vm.nextEvent.collectAsStateWithLifecycle()
     val settings = state.settings
     val colors = LocalOndaColors.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+    val haptics = LocalHapticFeedback.current
 
     var overlay by rememberSaveable { mutableStateOf(Overlay.NONE) }
     var actionsFor by remember { mutableStateOf<AppInfo?>(null) }
@@ -114,6 +129,7 @@ fun HomeScreen(
     var widgetPicker by remember { mutableStateOf(false) }
     var widgetFilter by remember { mutableStateOf<String?>(null) }
     var activeLetter by remember { mutableStateOf<Char?>(null) }
+    var backProgress by remember { mutableFloatStateOf(0f) }
 
     val homeList = rememberLazyListState()
     val allAppsList = rememberLazyListState()
@@ -128,8 +144,7 @@ fun HomeScreen(
 
     fun launchApp(app: AppInfo) {
         vm.launch(app)
-        // Chiudiamo i pannelli con un attimo di ritardo per non vedere il "salto" prima dell'animazione d'apertura
-        scope.launch { delay(350); closeAll() }
+        scope.launch { delay(380); closeAll() }
     }
 
     LaunchedEffect(state.loaded) { if (state.loaded) vm.seedFavoritesIfNeeded() }
@@ -144,10 +159,20 @@ fun HomeScreen(
         }
     }
 
-    BackHandler(enabled = overlay != Overlay.NONE) { closeAll() }
+    // Back predittivo (Android 14+): il pannello si rimpicciolisce seguendo il gesto
+    PredictiveBackHandler(enabled = overlay != Overlay.NONE) { progress ->
+        try {
+            progress.collect { backProgress = it.progress }
+            closeAll()
+        } catch (e: CancellationException) {
+            // gesto annullato
+        } finally {
+            backProgress = 0f
+        }
+    }
 
     // Gesti in home: tirare giù = notifiche, tirare su = ricerca
-    val threshold = with(density) { 72.dp.toPx() }
+    val threshold = with(density) { 64.dp.toPx() }
     val gestureConnection = remember(threshold) {
         object : NestedScrollConnection {
             var pull = 0f
@@ -160,13 +185,22 @@ fun HomeScreen(
                 val p = pull
                 pull = 0f
                 when {
-                    p > threshold || (p > threshold / 3 && available.y > 2500f) -> SystemActions.expandNotifications(context)
-                    p < -threshold || (p < -threshold / 3 && available.y < -2500f) -> overlay = Overlay.SEARCH
+                    p > threshold || (p > threshold / 3 && available.y > 2000f) -> SystemActions.expandNotifications(context)
+                    p < -threshold || (p < -threshold / 3 && available.y < -2000f) -> overlay = Overlay.SEARCH
                 }
                 return Velocity.Zero
             }
         }
     }
+
+    // Profondità: quando si apre un pannello la home arretra e sfuma
+    val depth by animateFloatAsState(
+        if (overlay == Overlay.NONE) 0f else 1f,
+        Motion.enter(450),
+        label = "depth",
+    )
+    val panelScale = 1f - 0.1f * backProgress
+    val panelCorner = (32 * backProgress).dp
 
     val dimColor = if (colors.dark) Color.Black else Color.White
     Box(
@@ -175,39 +209,89 @@ fun HomeScreen(
             .background(dimColor.copy(alpha = settings.wallpaperDim))
     ) {
         val bars = WindowInsets.systemBars.asPaddingValues()
-        val sidePad = 44.dp
+        val sidePad = 48.dp
 
         // ---------------- HOME ----------------
         LazyColumn(
             state = homeList,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.Bottom),
             contentPadding = PaddingValues(
                 start = if (settings.leftHanded) sidePad else 12.dp,
                 end = if (settings.leftHanded) 12.dp else sidePad,
                 top = bars.calculateTopPadding() + 24.dp,
-                bottom = bars.calculateBottomPadding() + 32.dp,
+                bottom = bars.calculateBottomPadding() + 28.dp,
             ),
             modifier = Modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    val s = 1f - 0.06f * depth
+                    scaleX = s; scaleY = s
+                    alpha = 1f - depth
+                }
                 .nestedScroll(gestureConnection)
-                .pointerInput(Unit) { detectTapGestures(onLongPress = { homeMenu = true }) }
+                .pointerInput(settings.doubleTapLock) {
+                    detectTapGestures(
+                        onLongPress = {
+                            if (settings.haptics) haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            homeMenu = true
+                        },
+                        onDoubleTap = if (settings.doubleTapLock) {
+                            { _: Offset -> if (!OndaAccessibilityService.lockScreen()) callbacks.openAccessibilitySettings() }
+                        } else null,
+                    )
+                }
         ) {
             if (settings.showClock) {
-                item(key = "clock") { ClockHeader(onTime = { SystemActions.openAlarms(context) }, onDate = { SystemActions.openCalendar(context) }) }
+                item(key = "clock") {
+                    ClockHeader(
+                        event = if (settings.showCalendar) nextEvent else null,
+                        onTime = { SystemActions.openAlarms(context) },
+                        onDate = { SystemActions.openCalendar(context) },
+                        onEvent = { vm.calendar.open(it) },
+                    )
+                }
+            }
+            item(key = "media") {
+                val m = media
+                AnimatedVisibility(
+                    visible = settings.showMedia && m != null,
+                    enter = fadeIn(Motion.enter()) + expandVertically(Motion.enter()),
+                    exit = fadeOut(Motion.exit()) + shrinkVertically(Motion.exit()),
+                ) {
+                    if (m != null) {
+                        MediaCard(
+                            media = m,
+                            onOpen = { vm.media.open() },
+                            onPlayPause = { vm.media.playPause() },
+                            onPrev = { vm.media.previous() },
+                            onNext = { vm.media.next() },
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp),
+                        )
+                    }
+                }
             }
             if (settings.widgetIds.isNotEmpty()) {
-                item(key = "widgets") { WidgetsArea(settings.widgetIds, vm.widgets, Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) }
+                item(key = "widgets") { WidgetsArea(settings.widgetIds, vm.widgets, Modifier.padding(horizontal = 4.dp, vertical = 8.dp)) }
             }
-            item(key = "spacer") { Spacer(Modifier.height(24.dp)) }
+            item(key = "spacer") { Spacer(Modifier.size(12.dp)) }
             items(state.favorites, key = { "f_" + it.key }) { app ->
+                val target = state.app(app.swipeTarget)
                 FavoriteRow(
                     app = app,
+                    swipeTarget = target,
                     notifications = state.notifications[app.packageName].orEmpty(),
                     showIcon = settings.showIcons,
+                    themedIcons = settings.themedIcons,
                     onClick = { launchApp(app) },
                     onLongClick = { actionsFor = app },
+                    onSwipe = { target?.let { launchApp(it) } },
                     onNotificationClick = { NotificationStore.open(context, it) },
                     onNotificationDismiss = { NotificationStore.dismiss(it) },
-                    modifier = Modifier.animateItem(),
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = Motion.enter(),
+                        placementSpec = Motion.offsetEnter,
+                        fadeOutSpec = Motion.exit(),
+                    ),
                 )
             }
             if (state.loaded && state.favorites.isEmpty()) {
@@ -215,36 +299,40 @@ fun HomeScreen(
                     Text(
                         "Trascina sulle lettere a lato per trovare un'app, poi tienila premuta e scegli «Aggiungi ai preferiti».",
                         color = colors.onWallpaperMuted,
-                        fontSize = 16.sp,
-                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                        modifier = Modifier.padding(14.dp),
                     )
                 }
             }
-            if (!notificationAccess) {
-                item(key = "notif_hint") {
-                    HintChip(Icons.Filled.Notifications, "Mostra le notifiche qui") { callbacks.openNotificationAccess() }
+            if (!status.notificationAccess || !status.isDefaultLauncher) {
+                item(key = "hints") {
+                    Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!status.notificationAccess) {
+                            HintChip(Icons.Filled.Notifications, "Notifiche qui") { callbacks.openNotificationAccess() }
+                        }
+                        if (!status.isDefaultLauncher) {
+                            HintChip(Icons.Filled.Settings, "Imposta come home") { callbacks.requestDefaultLauncher() }
+                        }
+                    }
                 }
-            }
-            if (!isDefaultLauncher) {
-                item(key = "default_hint") {
-                    HintChip(Icons.Filled.Settings, "Imposta Onda come home") { callbacks.requestDefaultLauncher() }
-                }
-            }
-            item(key = "search_hint") {
-                HintChip(Icons.Filled.Search, "Cerca") { overlay = Overlay.SEARCH }
             }
         }
 
         // ---------------- TUTTE LE APP ----------------
         AnimatedVisibility(
             visible = overlay == Overlay.ALL_APPS,
-            enter = fadeIn() + slideInHorizontally { if (settings.leftHanded) -it / 6 else it / 6 },
-            exit = fadeOut() + slideOutHorizontally { if (settings.leftHanded) -it / 6 else it / 6 },
+            enter = fadeIn(Motion.enter(300)) + scaleIn(Motion.enter(400), initialScale = 0.94f),
+            exit = fadeOut(Motion.exit(180)) + scaleOut(Motion.exit(200), targetScale = 0.96f),
         ) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(colors.scrim.copy(alpha = 0.9f))
+                    .graphicsLayer {
+                        scaleX = panelScale; scaleY = panelScale
+                        transformOrigin = TransformOrigin(if (settings.leftHanded) 0f else 1f, 0.5f)
+                    }
+                    .clip(RoundedCornerShape(panelCorner))
+                    .background(colors.scrim)
                     .blockTouches()
             ) {
                 AllAppsPanel(
@@ -253,23 +341,26 @@ fun HomeScreen(
                     activeLetter = activeLetter,
                     notifications = state.notifications,
                     showIcons = settings.showIcons,
+                    themedIcons = settings.themedIcons,
                     onClick = { launchApp(it) },
                     onLongClick = { actionsFor = it },
                     contentPadding = PaddingValues(
                         start = if (settings.leftHanded) sidePad + 8.dp else 12.dp,
                         end = if (settings.leftHanded) 12.dp else sidePad + 8.dp,
-                        top = bars.calculateTopPadding() + 56.dp,
+                        top = bars.calculateTopPadding() + 64.dp,
                         bottom = bars.calculateBottomPadding() + 24.dp,
                     ),
                 )
+                // Barra superiore solida (le app scorrono sotto senza sovrapporsi al titolo)
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .statusBarsPadding()
-                        .padding(start = 20.dp, end = 12.dp, top = 6.dp)
                         .fillMaxWidth()
+                        .background(colors.scrim)
+                        .statusBarsPadding()
+                        .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp)
                 ) {
-                    Text("Tutte le app", color = colors.onWallpaper, fontSize = 20.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text("App", color = colors.onWallpaper, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
                     RoundIcon(Icons.Filled.Search) { overlay = Overlay.SEARCH }
                     RoundIcon(Icons.Filled.Close) { closeAll() }
                 }
@@ -277,66 +368,92 @@ fun HomeScreen(
         }
 
         // ---------------- SCROLLER A ONDA ----------------
-        if (overlay == Overlay.NONE || overlay == Overlay.ALL_APPS) {
+        val scrollerAlpha by animateFloatAsState(
+            if (overlay == Overlay.NONE || overlay == Overlay.ALL_APPS) 1f else 0f,
+            Motion.enter(250),
+            label = "scroller",
+        )
+        if (scrollerAlpha > 0.01f) {
             AlphabetWaveScroller(
                 letters = letters,
                 leftSide = settings.leftHanded,
                 modifier = Modifier
                     .align(if (settings.leftHanded) Alignment.CenterStart else Alignment.CenterEnd)
-                    .padding(top = bars.calculateTopPadding() + 64.dp, bottom = bars.calculateBottomPadding() + 48.dp)
-                    .padding(horizontal = 4.dp),
+                    .graphicsLayer { alpha = scrollerAlpha }
+                    .padding(top = bars.calculateTopPadding() + 72.dp, bottom = bars.calculateBottomPadding() + 40.dp)
+                    .padding(horizontal = 6.dp),
                 onTouchStart = { overlay = Overlay.ALL_APPS },
                 onLetter = { letter ->
                     activeLetter = letter
                     sections.firstOrNull { it.letter == letter }?.let { s ->
-                        scope.launch { allAppsList.scrollToItem(s.firstIndex) }
+                        scope.launch { allAppsList.animateScrollToItem(s.firstIndex) }
                     }
                 },
-                onTouchEnd = { /* il pannello resta aperto per scegliere l'app */ },
             )
         }
 
         // ---------------- RICERCA ----------------
         AnimatedVisibility(
             visible = overlay == Overlay.SEARCH,
-            enter = fadeIn() + slideInVertically { it / 8 },
-            exit = fadeOut() + slideOutVertically { it / 8 },
+            enter = fadeIn(Motion.enter(300)) + slideInVertically(Motion.offsetEnter) { it / 10 },
+            exit = fadeOut(Motion.exit()) + slideOutVertically(Motion.offsetExit) { it / 14 },
         ) {
-            SearchPanel(
-                results = search,
-                showIcons = settings.showIcons,
-                contactsPermission = contactsPermission,
-                onQueryChange = vm::updateSearch,
-                onApp = { launchApp(it) },
-                onAppLongClick = { actionsFor = it },
-                onContact = { vm.contacts.open(it); scope.launch { delay(350); closeAll() } },
-                onWebSearch = { SystemActions.webSearch(context, it); scope.launch { delay(350); closeAll() } },
-                onRequestContacts = callbacks::requestContactsPermission,
-                onClose = { closeAll() },
-            )
+            Box(
+                Modifier.graphicsLayer { scaleX = panelScale; scaleY = panelScale }
+                    .clip(RoundedCornerShape(panelCorner))
+            ) {
+                SearchPanel(
+                    results = search,
+                    showIcons = settings.showIcons,
+                    themedIcons = settings.themedIcons,
+                    contactsPermission = status.contactsPermission,
+                    onQueryChange = vm::updateSearch,
+                    onApp = { launchApp(it) },
+                    onAppLongClick = { actionsFor = it },
+                    onContact = { vm.contacts.open(it); scope.launch { delay(380); closeAll() } },
+                    onWebSearch = { SystemActions.webSearch(context, it); scope.launch { delay(380); closeAll() } },
+                    onRequestContacts = callbacks::requestContactsPermission,
+                    onClose = { closeAll() },
+                )
+            }
         }
 
         // ---------------- IMPOSTAZIONI ----------------
         AnimatedVisibility(
             visible = overlay == Overlay.SETTINGS,
-            enter = fadeIn() + slideInVertically { it / 10 },
-            exit = fadeOut() + slideOutVertically { it / 10 },
+            enter = fadeIn(Motion.enter(300)) + slideInVertically(Motion.offsetEnter) { it / 8 },
+            exit = fadeOut(Motion.exit()) + slideOutVertically(Motion.offsetExit) { it / 12 },
         ) {
-            SettingsScreen(
-                settings = settings,
-                hiddenApps = state.hiddenApps,
-                isDefaultLauncher = isDefaultLauncher,
-                notificationAccess = notificationAccess,
-                widgets = vm.widgets,
-                onEdit = vm::updateSettings,
-                onRequestDefault = callbacks::requestDefaultLauncher,
-                onNotificationAccess = callbacks::openNotificationAccess,
-                onAddWidget = { widgetFilter = null; widgetPicker = true },
-                onRemoveWidget = vm::removeWidget,
-                onUnhide = { vm.setHidden(it, false) },
-                onWallpaper = { SystemActions.openWallpaperPicker(context) },
-                onClose = { closeAll() },
-            )
+            Box(
+                Modifier.graphicsLayer { scaleX = panelScale; scaleY = panelScale }
+                    .clip(RoundedCornerShape(panelCorner))
+            ) {
+                SettingsScreen(
+                    settings = settings,
+                    hiddenApps = state.hiddenApps,
+                    status = SettingsStatus(
+                        isDefaultLauncher = status.isDefaultLauncher,
+                        notificationAccess = status.notificationAccess,
+                        calendarPermission = status.calendarPermission,
+                        accessibilityEnabled = status.accessibilityEnabled,
+                    ),
+                    widgets = vm.widgets,
+                    actions = object : SettingsActions {
+                        override fun edit(transform: (com.gabrielepiccione.onda.data.Settings) -> com.gabrielepiccione.onda.data.Settings) = vm.updateSettings(transform)
+                        override fun requestDefault() = callbacks.requestDefaultLauncher()
+                        override fun notificationAccess() = callbacks.openNotificationAccess()
+                        override fun calendarPermission() = callbacks.requestCalendarPermission()
+                        override fun accessibility() = callbacks.openAccessibilitySettings()
+                        override fun addWidget() { widgetFilter = null; widgetPicker = true }
+                        override fun removeWidget(id: Int) = vm.removeWidget(id)
+                        override fun unhide(app: AppInfo) = vm.setHidden(app, false)
+                        override fun wallpaper() = SystemActions.openWallpaperPicker(context)
+                        override fun exportBackup() = callbacks.exportBackup()
+                        override fun importBackup() = callbacks.importBackup()
+                        override fun close() = closeAll()
+                    },
+                )
+            }
         }
     }
 
@@ -348,15 +465,17 @@ fun HomeScreen(
             app = app,
             actions = AppActions(
                 shortcuts = shortcuts,
+                shortcutIcon = { vm.appsRepo.shortcutIcon(it) },
+                swipeTarget = state.app(app.swipeTarget),
+                allApps = state.allApps.filter { it.key != app.key },
+                themedIcons = settings.themedIcons,
+                onSetSwipe = { vm.setSwipeAction(app, it) },
                 isMuted = app.packageName in settings.mutedNotifications,
                 favoriteIndex = favIndex,
                 favoriteCount = state.favorites.size,
                 onShortcut = vm::startShortcut,
                 onToggleFavorite = { vm.toggleFavorite(app) },
-                onMove = { delta ->
-                    vm.moveFavorite(app, delta)
-                    actionsFor = app // resta aperto per spostamenti multipli
-                },
+                onMove = { delta -> vm.moveFavorite(app, delta) },
                 onRename = { vm.rename(app, it) },
                 onToggleHidden = { vm.setHidden(app, !app.isHidden) },
                 onToggleMuted = { vm.toggleMuted(app) },
@@ -379,7 +498,7 @@ fun HomeScreen(
                 MenuRow(Icons.Filled.Settings, "Impostazioni") { homeMenu = false; overlay = Overlay.SETTINGS }
                 MenuRow(Icons.Filled.Add, "Aggiungi widget") { homeMenu = false; widgetFilter = null; widgetPicker = true }
                 MenuRow(Icons.Filled.Search, "Cerca") { homeMenu = false; overlay = Overlay.SEARCH }
-                MenuRow(Icons.Filled.Notifications, "Cambia sfondo") { homeMenu = false; SystemActions.openWallpaperPicker(context) }
+                MenuRow(Icons.Filled.Face, "Cambia sfondo") { homeMenu = false; SystemActions.openWallpaperPicker(context) }
             }
         }
     }
@@ -395,48 +514,19 @@ fun HomeScreen(
 }
 
 @Composable
-private fun ClockHeader(onTime: () -> Unit, onDate: () -> Unit) {
-    val colors = LocalOndaColors.current
-    val now by produceState(LocalDateTime.now()) {
-        while (true) {
-            value = LocalDateTime.now()
-            val msToNextMinute = 60_000L - (System.currentTimeMillis() % 60_000L)
-            delay(msToNextMinute + 50)
-        }
-    }
-    val locale = Locale.getDefault()
-    Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Text(
-            now.format(DateTimeFormatter.ofPattern("HH:mm", locale)),
-            color = colors.onWallpaper,
-            fontSize = 64.sp,
-            fontWeight = FontWeight.Light,
-            modifier = Modifier.clickable(onClick = onTime),
-        )
-        Text(
-            now.format(DateTimeFormatter.ofPattern("EEEE d MMMM", locale)).replaceFirstChar { it.titlecase(locale) },
-            color = colors.onWallpaperMuted,
-            fontSize = 17.sp,
-            modifier = Modifier.clickable(onClick = onDate),
-        )
-    }
-}
-
-@Composable
 private fun HintChip(icon: ImageVector, text: String, onClick: () -> Unit) {
     val colors = LocalOndaColors.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
-            .padding(start = 12.dp, top = 12.dp)
             .clip(RoundedCornerShape(50))
-            .background(colors.panel.copy(alpha = 0.6f))
+            .background(colors.accentContainer)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        Icon(icon, null, tint = colors.accent, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(10.dp))
-        Text(text, color = colors.onWallpaper, fontSize = 14.sp)
+        Icon(icon, null, tint = colors.onAccentContainer, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(text, color = colors.onAccentContainer, style = MaterialTheme.typography.labelLarge)
     }
 }
 
@@ -445,7 +535,7 @@ private fun RoundIcon(icon: ImageVector, onClick: () -> Unit) {
     val colors = LocalOndaColors.current
     Box(
         contentAlignment = Alignment.Center,
-        modifier = Modifier.size(44.dp).clip(CircleShape).clickable(onClick = onClick)
+        modifier = Modifier.size(48.dp).clip(CircleShape).clickable(onClick = onClick)
     ) {
         Icon(icon, null, tint = colors.onWallpaper)
     }
@@ -463,6 +553,6 @@ private fun MenuRow(icon: ImageVector, label: String, onClick: () -> Unit) {
     ) {
         Icon(icon, null, tint = colors.accent)
         Spacer(Modifier.width(18.dp))
-        Text(label, fontSize = 16.sp)
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
