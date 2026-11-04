@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icona originale: tre onde sovrapposte -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7FE3D1"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M34,44 C40,38 46,38 52,44 C58,50 64,50 74,42" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M34,56 C40,50 46,50 52,56 C58,62 64,62 74,54" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#7FB8E3"
+        android:strokeWidth="5"
+        android:strokeLineCap="round"
+        android:pathData="M34,68 C40,62 46,62 52,68 C58,74 64,74 74,66" />
+</vector>
