@@ -51,7 +51,7 @@ fun WidgetsArea(widgetIds: List<Int>, widgets: WidgetManager, modifier: Modifier
 }
 
 @Composable
-private fun HostedWidget(id: Int, widgets: WidgetManager) {
+fun HostedWidget(id: Int, widgets: WidgetManager) {
     val info = remember(id) { widgets.infoFor(id) } ?: return
     val density = LocalDensity.current
     val minHeightDp = with(density) { info.minHeight.toDp() }.coerceAtLeast(72.dp)

@@ -176,16 +176,25 @@ fun SettingsScreen(
                 else runCatching { pm.getApplicationLabel(pm.getApplicationInfo(settings.iconPack, 0)).toString() }.getOrDefault(settings.iconPack)
             }
             ClickRow("Icon pack", packLabel) { iconPackDialog = true }
+            Label("Dimensione icone")
+            Slider(value = settings.iconSize, onValueChange = { v -> onEdit { it.copy(iconSize = v) } }, valueRange = 0.75f..1.4f)
         }
 
         Group("Home") {
             SwitchRow("Orologio e data", null, settings.showClock) { v -> onEdit { it.copy(showClock = v) } }
             SwitchRow("Prossimo evento", "Dal calendario, nelle prossime 24 ore", settings.showCalendar) { v -> onEdit { it.copy(showCalendar = v) } }
             SwitchRow("Player musicale", "Controlli della musica in riproduzione", settings.showMedia) { v -> onEdit { it.copy(showMedia = v) } }
-            SwitchRow("Scroller a sinistra", "Modalità mancini", settings.leftHanded) { v -> onEdit { it.copy(leftHanded = v) } }
+            SwitchRow("Alfabeto a sinistra", "Modalità mancini (il lato opposto resta attivo ma invisibile)", settings.leftHanded) { v -> onEdit { it.copy(leftHanded = v) } }
+            SwitchRow("Nascondi alfabeto in home", "Resta attivo e visibile accanto all'elenco delle app", settings.hideAlphabet) { v -> onEdit { it.copy(hideAlphabet = v) } }
+            SwitchRow("Nascondi nomi dei preferiti", "Solo icone, per mettere in risalto lo sfondo", settings.hideFavoriteNames) { v -> onEdit { it.copy(hideFavoriteNames = v) } }
+            SwitchRow("Nascondi barra di stato", null, settings.hideStatusBar) { v -> onEdit { it.copy(hideStatusBar = v) } }
         }
 
         Group("Gesti e feedback") {
+            Label("Scorri verso il basso")
+            GestureChips(settings.swipeDown) { g -> onEdit { it.copy(swipeDown = g) } }
+            Label("Scorri verso l'alto")
+            GestureChips(settings.swipeUp) { g -> onEdit { it.copy(swipeUp = g) } }
             SwitchRow(
                 "Doppio tocco per bloccare",
                 if (status.accessibilityEnabled) "Tocca due volte uno spazio vuoto della home" else "Richiede di attivare il servizio di accessibilità di Onda",
@@ -196,7 +205,7 @@ fun SettingsScreen(
             }
             SwitchRow("Vibrazione", "Feedback aptico su scroller e pressioni lunghe", settings.haptics) { v -> onEdit { it.copy(haptics = v) } }
             Text(
-                "Scorri giù: notifiche · Scorri su: ricerca · Scorri a destra su un preferito: azione rapida · Tieni premuto: opzioni",
+                "Scorri a destra su un'app: pannello rapido · Tieni premuto: opzioni · Bordi dello schermo: alfabeto (anche il lato senza lettere)",
                 color = colors.onWallpaperMuted,
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(top = 6.dp),
@@ -241,7 +250,7 @@ fun SettingsScreen(
         }
 
         Text(
-            "Onda 0.2 · launcher minimale",
+            "Onda 0.3 · launcher minimale",
             color = colors.onWallpaperMuted,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(vertical = 28.dp, horizontal = 8.dp),
@@ -274,6 +283,15 @@ fun SettingsScreen(
             },
             confirmButton = { TextButton(onClick = { iconPackDialog = false }) { Text("Chiudi") } },
         )
+    }
+}
+
+@Composable
+private fun GestureChips(selected: com.gabrielepiccione.onda.data.GestureAction, onPick: (com.gabrielepiccione.onda.data.GestureAction) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.horizontalScroll(rememberScrollState()).padding(bottom = 6.dp)) {
+        com.gabrielepiccione.onda.data.GestureAction.entries.forEach { g ->
+            FilterChip(selected = selected == g, onClick = { onPick(g) }, label = { Text(g.label) })
+        }
     }
 }
 

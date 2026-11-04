@@ -67,6 +67,71 @@ class SettingsRepository(context: Context) {
     }
 
     fun addWidget(id: Int) = edit { it.copy(widgetIds = it.widgetIds + id) }
+
+    // --- Cartelle ---
+
+    fun createFolder(name: String, firstApp: String?): String {
+        val id = "f" + System.currentTimeMillis().toString(36)
+        edit { s ->
+            val apps = listOfNotNull(firstApp)
+            s.copy(
+                folders = s.folders + (id to Folder(id, name.ifBlank { "Cartella" }, apps)),
+                favorites = (s.favorites - apps.toSet()) + (FOLDER_PREFIX + id),
+            )
+        }
+        return id
+    }
+
+    fun renameFolder(id: String, name: String) = edit { s ->
+        val f = s.folders[id] ?: return@edit s
+        s.copy(folders = s.folders + (id to f.copy(name = name.ifBlank { f.name })))
+    }
+
+    /** Elimina la cartella; le app tornano tra i preferiti. Restituisce i widget da rilasciare. */
+    fun deleteFolder(id: String): List<Int> {
+        val widgets = current.folders[id]?.widgets.orEmpty()
+        edit { s ->
+            val f = s.folders[id] ?: return@edit s
+            val list = s.favorites.toMutableList()
+            val at = list.indexOf(FOLDER_PREFIX + id).coerceAtLeast(0)
+            list.remove(FOLDER_PREFIX + id)
+            list.addAll(at.coerceAtMost(list.size), f.apps.filter { it !in list })
+            s.copy(folders = s.folders - id, favorites = list)
+        }
+        return widgets
+    }
+
+    /** Sposta un'app in una cartella (null = fuori da tutte, tra i preferiti). */
+    fun moveAppToFolder(appKey: String, folderId: String?) = edit { s ->
+        val cleaned = s.folders.mapValues { (_, f) -> f.copy(apps = f.apps - appKey) }
+        if (folderId == null) {
+            s.copy(folders = cleaned, favorites = if (appKey in s.favorites) s.favorites else s.favorites + appKey)
+        } else {
+            val target = cleaned[folderId] ?: return@edit s
+            s.copy(
+                folders = cleaned + (folderId to target.copy(apps = target.apps + appKey)),
+                favorites = s.favorites - appKey,
+            )
+        }
+    }
+
+    fun addWidgetToFolder(folderId: String, widgetId: Int) = edit { s ->
+        val f = s.folders[folderId] ?: return@edit s
+        s.copy(folders = s.folders + (folderId to f.copy(widgets = f.widgets + widgetId)))
+    }
+
+    fun removeWidgetFromFolder(folderId: String, widgetId: Int) = edit { s ->
+        val f = s.folders[folderId] ?: return@edit s
+        s.copy(folders = s.folders + (folderId to f.copy(widgets = f.widgets - widgetId)))
+    }
+
+    fun setAppWidget(appKey: String, widgetId: Int?) = edit { s ->
+        s.copy(appWidgets = if (widgetId == null) s.appWidgets - appKey else s.appWidgets + (appKey to widgetId))
+    }
+
+    fun recordLaunch(appKey: String) = edit { s ->
+        s.copy(launchCounts = s.launchCounts + (appKey to (s.launchCounts[appKey] ?: 0) + 1))
+    }
     fun removeWidget(id: Int) = edit { it.copy(widgetIds = it.widgetIds - id) }
 
     // --- Backup ---
@@ -88,6 +153,22 @@ class SettingsRepository(context: Context) {
         put("hidden", JSONArray(s.hidden.toList()))
         put("renames", JSONObject(s.renames as Map<*, *>))
         put("swipeActions", JSONObject(s.swipeActions as Map<*, *>))
+        put("folders", JSONArray().apply {
+            s.folders.values.forEach { f ->
+                put(JSONObject().apply {
+                    put("id", f.id); put("name", f.name)
+                    put("apps", JSONArray(f.apps)); put("widgets", JSONArray(f.widgets))
+                })
+            }
+        })
+        put("appWidgets", JSONObject(s.appWidgets as Map<*, *>))
+        put("launchCounts", JSONObject(s.launchCounts as Map<*, *>))
+        put("swipeDown", s.swipeDown.name)
+        put("swipeUp", s.swipeUp.name)
+        put("hideStatusBar", s.hideStatusBar)
+        put("hideAlphabet", s.hideAlphabet)
+        put("hideFavoriteNames", s.hideFavoriteNames)
+        put("iconSize", s.iconSize.toDouble())
         put("muted", JSONArray(s.mutedNotifications.toList()))
         put("themeMode", s.themeMode.name)
         put("dynamicColor", s.dynamicColor)
@@ -120,6 +201,25 @@ class SettingsRepository(context: Context) {
             hidden = strings("hidden").toSet(),
             renames = map("renames"),
             swipeActions = map("swipeActions"),
+            folders = o.optJSONArray("folders")?.let { a ->
+                (0 until a.length()).map { a.getJSONObject(it) }.associate { f ->
+                    val id = f.getString("id")
+                    id to Folder(
+                        id = id,
+                        name = f.optString("name", "Cartella"),
+                        apps = f.optJSONArray("apps")?.let { x -> (0 until x.length()).map { x.getString(it) } } ?: emptyList(),
+                        widgets = f.optJSONArray("widgets")?.let { x -> (0 until x.length()).map { x.getInt(it) } } ?: emptyList(),
+                    )
+                }
+            } ?: emptyMap(),
+            appWidgets = o.optJSONObject("appWidgets")?.let { m -> m.keys().asSequence().associateWith { m.getInt(it) } } ?: emptyMap(),
+            launchCounts = o.optJSONObject("launchCounts")?.let { m -> m.keys().asSequence().associateWith { m.getInt(it) } } ?: emptyMap(),
+            swipeDown = GestureAction.entries.firstOrNull { it.name == o.optString("swipeDown") } ?: d.swipeDown,
+            swipeUp = GestureAction.entries.firstOrNull { it.name == o.optString("swipeUp") } ?: d.swipeUp,
+            hideStatusBar = o.optBoolean("hideStatusBar", d.hideStatusBar),
+            hideAlphabet = o.optBoolean("hideAlphabet", d.hideAlphabet),
+            hideFavoriteNames = o.optBoolean("hideFavoriteNames", d.hideFavoriteNames),
+            iconSize = o.optDouble("iconSize", d.iconSize.toDouble()).toFloat(),
             mutedNotifications = strings("muted").toSet(),
             themeMode = ThemeMode.entries.firstOrNull { it.name == o.optString("themeMode") } ?: d.themeMode,
             dynamicColor = o.optBoolean("dynamicColor", d.dynamicColor),

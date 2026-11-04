@@ -64,6 +64,25 @@ data class CalendarEvent(
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+/** Azione associata a uno swipe verticale in home. */
+enum class GestureAction(val label: String) {
+    SEARCH("Ricerca"),
+    NOTIFICATIONS("Tendina notifiche"),
+    ALL_APPS("Tutte le app"),
+    NONE("Nessuna"),
+}
+
+/** Cartella in home: contiene app (per chiave) e widget (per id). */
+data class Folder(
+    val id: String,
+    val name: String,
+    val apps: List<String> = emptyList(),
+    val widgets: List<Int> = emptyList(),
+)
+
+/** Prefisso delle voci "cartella" nell'elenco dei preferiti. */
+const val FOLDER_PREFIX = "folder:"
+
 enum class FontChoice(val label: String) {
     SYSTEM("Sistema"),
     SANS("Sans"),
@@ -77,6 +96,16 @@ data class Settings(
     val hidden: Set<String> = emptySet(),
     val renames: Map<String, String> = emptyMap(),
     val swipeActions: Map<String, String> = emptyMap(),
+    val folders: Map<String, Folder> = emptyMap(),
+    /** Widget mostrato nel pannello dell'app (swipe sulla riga): chiave app -> id widget. */
+    val appWidgets: Map<String, Int> = emptyMap(),
+    val launchCounts: Map<String, Int> = emptyMap(),
+    val swipeDown: GestureAction = GestureAction.SEARCH,
+    val swipeUp: GestureAction = GestureAction.NOTIFICATIONS,
+    val hideStatusBar: Boolean = false,
+    val hideAlphabet: Boolean = false,
+    val hideFavoriteNames: Boolean = false,
+    val iconSize: Float = 1f,
     val mutedNotifications: Set<String> = emptySet(),
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = true,

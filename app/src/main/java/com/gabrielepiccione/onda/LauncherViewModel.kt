@@ -27,9 +27,20 @@ import kotlinx.coroutines.launch
 import java.text.Collator
 import java.util.Locale
 
+/** Voce della home: un'app preferita oppure una cartella. */
+sealed interface HomeEntry {
+    val key: String
+    data class App(val app: AppInfo) : HomeEntry { override val key get() = "f_" + app.key }
+    data class Group(val folder: com.gabrielepiccione.onda.data.Folder, val apps: List<AppInfo>) : HomeEntry {
+        override val key get() = "g_" + folder.id
+    }
+}
+
 data class LauncherState(
     val allApps: List<AppInfo> = emptyList(),     // visibili, ordinate A-Z
-    val favorites: List<AppInfo> = emptyList(),   // nell'ordine scelto
+    val favorites: List<AppInfo> = emptyList(),   // solo app preferite (fuori dalle cartelle), in ordine
+    val home: List<HomeEntry> = emptyList(),      // app + cartelle, nell'ordine scelto
+    val suggestions: List<AppInfo> = emptyList(), // app più usate
     val hiddenApps: List<AppInfo> = emptyList(),
     val notifications: Map<String, List<NotificationItem>> = emptyMap(),
     val settings: Settings = Settings(),
@@ -80,9 +91,24 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
         }.sortedWith { a, b -> collator.compare(a.label, b.label) }
 
         val byKey = all.associateBy { it.key }
+        val home = settings.favorites.mapNotNull { entry ->
+            if (entry.startsWith(com.gabrielepiccione.onda.data.FOLDER_PREFIX)) {
+                val f = settings.folders[entry.removePrefix(com.gabrielepiccione.onda.data.FOLDER_PREFIX)] ?: return@mapNotNull null
+                HomeEntry.Group(f, f.apps.mapNotNull { byKey[it] })
+            } else {
+                byKey[entry]?.takeIf { !it.isHidden }?.let { HomeEntry.App(it) }
+            }
+        }
+        val visible = all.filterNot { it.isHidden }
         LauncherState(
-            allApps = all.filterNot { it.isHidden },
-            favorites = settings.favorites.mapNotNull { byKey[it] }.filterNot { it.isHidden },
+            allApps = visible,
+            favorites = home.filterIsInstance<HomeEntry.App>().map { it.app },
+            home = home,
+            suggestions = settings.launchCounts.entries
+                .sortedByDescending { it.value }
+                .mapNotNull { byKey[it.key]?.takeIf { a -> !a.isHidden } }
+                .take(8)
+                .ifEmpty { visible.take(8) },
             hiddenApps = all.filter { it.isHidden },
             notifications = notifs.filterKeys { it !in settings.mutedNotifications },
             settings = settings,
@@ -146,7 +172,25 @@ class LauncherViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // --- Azioni sulle app ---
-    fun launch(app: AppInfo) = appsRepo.launch(app)
+    fun launch(app: AppInfo) {
+        appsRepo.launch(app)
+        viewModelScope.launch { delay(600); settingsRepo.recordLaunch(app.key) }
+    }
+
+    // --- Cartelle ---
+    fun createFolder(name: String, first: AppInfo?) = settingsRepo.createFolder(name, first?.key)
+    fun renameFolder(id: String, name: String) = settingsRepo.renameFolder(id, name)
+    fun deleteFolder(id: String) = settingsRepo.deleteFolder(id).forEach { widgets.deleteId(it) }
+    fun moveToFolder(app: AppInfo, folderId: String?) = settingsRepo.moveAppToFolder(app.key, folderId)
+    fun moveEntry(entryKey: String, delta: Int) = settingsRepo.moveFavorite(entryKey, delta)
+    fun removeFolderWidget(folderId: String, id: Int) {
+        widgets.deleteId(id)
+        settingsRepo.removeWidgetFromFolder(folderId, id)
+    }
+    fun removeAppWidget(app: AppInfo) {
+        settingsRepo.current.appWidgets[app.key]?.let { widgets.deleteId(it) }
+        settingsRepo.setAppWidget(app.key, null)
+    }
     fun toggleFavorite(app: AppInfo) = settingsRepo.toggleFavorite(app.key)
     fun moveFavorite(app: AppInfo, delta: Int) = settingsRepo.moveFavorite(app.key, delta)
     fun setHidden(app: AppInfo, hidden: Boolean) = settingsRepo.setHidden(app.key, hidden)

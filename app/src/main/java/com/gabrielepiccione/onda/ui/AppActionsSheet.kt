@@ -60,6 +60,8 @@ data class AppActions(
     val allApps: List<AppInfo>,
     val themedIcons: Boolean,
     val onSetSwipe: (AppInfo?) -> Unit,
+    val folderName: String?,
+    val onMoveToFolder: () -> Unit,
     val isMuted: Boolean,
     val favoriteIndex: Int,
     val favoriteCount: Int,
@@ -139,8 +141,11 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
             if (app.isFavorite) {
                 ActionRow(
                     Icons.Filled.KeyboardArrowRight,
-                    actions.swipeTarget?.let { "Scorri a destra: ${it.label}" } ?: "Imposta azione di scorrimento",
+                    actions.swipeTarget?.let { "Scorri a destra: apri ${it.label}" } ?: "Scorri a destra: pannello (cambia)",
                 ) { pickingSwipe = true }
+            }
+            ActionRow(Icons.Filled.Add, actions.folderName?.let { "In cartella «$it» · sposta" } ?: "Sposta in cartella…") {
+                actions.onMoveToFolder(); onDismiss()
             }
             ActionRow(Icons.Filled.Edit, "Rinomina") { renaming = true }
             ActionRow(Icons.Filled.Lock, if (app.isHidden) "Mostra nell'elenco" else "Nascondi") {
@@ -165,7 +170,7 @@ fun AppActionsSheet(app: AppInfo, actions: AppActions, onDismiss: () -> Unit) {
                 androidx.compose.foundation.lazy.LazyColumn(Modifier.heightIn(max = 420.dp)) {
                     item {
                         Text(
-                            "Nessuna (espande le notifiche)",
+                            "Pannello dell'app (predefinito)",
                             color = colors.onWallpaperMuted,
                             modifier = Modifier
                                 .fillMaxWidth()

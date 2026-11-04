@@ -26,6 +26,9 @@ import com.gabrielepiccione.onda.ui.HomeScreen
 import com.gabrielepiccione.onda.ui.HomeStatus
 import com.gabrielepiccione.onda.ui.LocalOndaColors
 import com.gabrielepiccione.onda.ui.OndaTheme
+import com.gabrielepiccione.onda.ui.WidgetTarget
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.gabrielepiccione.onda.util.SystemActions
 import java.time.LocalDate
 
@@ -39,6 +42,7 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
 
     /** Id del widget in attesa di consenso/configurazione. */
     private var pendingWidgetId = -1
+    private var pendingTarget: WidgetTarget = WidgetTarget.Home
 
     private val contactsLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         refreshStatus()
@@ -74,10 +78,17 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
             val state by vm.state.collectAsStateWithLifecycle()
             OndaTheme(state.settings) {
                 val dark = LocalOndaColors.current.dark
+                val hideBar = state.settings.hideStatusBar
                 SideEffect {
                     WindowCompat.getInsetsController(window, window.decorView).apply {
                         isAppearanceLightStatusBars = !dark
                         isAppearanceLightNavigationBars = !dark
+                        if (hideBar) {
+                            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                            hide(WindowInsetsCompat.Type.statusBars())
+                        } else {
+                            show(WindowInsetsCompat.Type.statusBars())
+                        }
                     }
                 }
                 HomeScreen(vm = vm, callbacks = this, status = status)
@@ -147,9 +158,10 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
     override fun importBackup() = importLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
 
     @Suppress("DEPRECATION")
-    override fun pickWidget(provider: WidgetManager.Provider) {
+    override fun pickWidget(provider: WidgetManager.Provider, target: WidgetTarget) {
         val id = widgets.allocateId()
         pendingWidgetId = id
+        pendingTarget = target
         if (widgets.bindIfAllowed(id, provider)) {
             configureOrAdd(id)
         } else {
@@ -174,8 +186,16 @@ class MainActivity : ComponentActivity(), HomeCallbacks {
     }
 
     private fun addPending(id: Int) {
-        vm.settingsRepo.addWidget(id)
+        when (val t = pendingTarget) {
+            WidgetTarget.Home -> vm.settingsRepo.addWidget(id)
+            is WidgetTarget.InFolder -> vm.settingsRepo.addWidgetToFolder(t.folderId, id)
+            is WidgetTarget.ForApp -> {
+                vm.settingsRepo.current.appWidgets[t.appKey]?.let { old -> widgets.deleteId(old) }
+                vm.settingsRepo.setAppWidget(t.appKey, id)
+            }
+        }
         pendingWidgetId = -1
+        pendingTarget = WidgetTarget.Home
     }
 
     private fun cancelPending() {

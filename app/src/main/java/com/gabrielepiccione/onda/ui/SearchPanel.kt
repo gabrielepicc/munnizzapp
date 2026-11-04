@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +50,7 @@ import com.gabrielepiccione.onda.data.ContactHit
 @Composable
 fun SearchPanel(
     results: SearchResults,
+    suggestions: List<AppInfo>,
     showIcons: Boolean,
     themedIcons: Boolean,
     contactsPermission: Boolean,
@@ -83,19 +86,20 @@ fun SearchPanel(
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(28.dp))
                 .background(colors.panelHigh)
-                .padding(start = 18.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+                .height(56.dp)
+                .padding(start = 18.dp, end = 6.dp)
         ) {
             Icon(Icons.Filled.Search, contentDescription = null, tint = colors.onWallpaperMuted)
             Spacer(Modifier.width(12.dp))
-            Box(Modifier.weight(1f)) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (results.query.isEmpty()) {
-                    Text("Cerca app, contatti, web", color = colors.onWallpaperMuted, fontSize = 18.sp)
+                    Text("Cerca app, contatti, web", color = colors.onWallpaperMuted, style = MaterialTheme.typography.bodyLarge, fontSize = 18.sp)
                 }
                 BasicTextField(
                     value = results.query,
                     onValueChange = onQueryChange,
                     singleLine = true,
-                    textStyle = TextStyle(color = colors.onWallpaper, fontSize = 18.sp),
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = colors.onWallpaper, fontSize = 18.sp),
                     cursorBrush = SolidColor(colors.accent),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = {
@@ -107,8 +111,7 @@ fun SearchPanel(
                     }),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .focusRequester(focus)
-                        .padding(vertical = 10.dp),
+                        .focusRequester(focus),
                 )
             }
             Box(
@@ -120,6 +123,20 @@ fun SearchPanel(
         }
 
         LazyColumn(Modifier.fillMaxSize()) {
+            if (results.query.isBlank() && suggestions.isNotEmpty()) {
+                item(key = "sugg_label") { SectionLabel("Usate spesso") }
+                items(suggestions, key = { "s_" + it.key }) { app ->
+                    AppListRow(
+                        app = app,
+                        hasNotification = false,
+                        showIcon = showIcons,
+                        themedIcons = themedIcons,
+                        onClick = { onApp(app) },
+                        onLongClick = { onAppLongClick(app) },
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            }
             results.calc?.let { value ->
                 item(key = "calc") {
                     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current

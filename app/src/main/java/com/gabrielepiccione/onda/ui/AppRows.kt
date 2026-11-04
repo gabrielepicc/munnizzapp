@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -120,6 +121,8 @@ fun FavoriteRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onSwipe: () -> Unit,
+    hideName: Boolean = false,
+    iconScale: Float = 1f,
     onNotificationClick: (NotificationItem) -> Unit,
     onNotificationDismiss: (NotificationItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -138,7 +141,7 @@ fun FavoriteRow(
     var armed by remember { mutableStateOf(false) }
 
     val latest = notifications.firstOrNull()
-    val canSwipe = swipeTarget != null || notifications.size > 1
+    val canSwipe = true
 
     Box(modifier.fillMaxWidth()) {
         // Sfondo rivelato dallo scorrimento
@@ -156,11 +159,7 @@ fun FavoriteRow(
                     if (swipeTarget != null) {
                         AppIcon(swipeTarget, 32.dp, themedIcons)
                     } else {
-                        Icon(
-                            if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                            null,
-                            tint = colors.onAccentContainer,
-                        )
+                        Icon(Icons.Filled.KeyboardArrowRight, null, tint = colors.onAccentContainer)
                     }
                 }
             }
@@ -189,7 +188,7 @@ fun FavoriteRow(
                     },
                     onDragStopped = {
                         if (armed) {
-                            if (swipeTarget != null) onSwipe() else expanded = !expanded
+                            onSwipe()
                         }
                         armed = false
                         offsetX.animateTo(0f, spring(dampingRatio = 0.7f, stiffness = 500f))
@@ -210,7 +209,7 @@ fun FavoriteRow(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (showIcon) {
                     Box {
-                        AppIcon(app, 44.dp, themedIcons)
+                        AppIcon(app, 44.dp * iconScale, themedIcons)
                         val dot by animateFloatAsState(if (latest != null) 1f else 0f, Motion.bouncy(), label = "dot")
                         if (dot > 0.01f) {
                             Box(
@@ -228,14 +227,18 @@ fun FavoriteRow(
                     }
                     Spacer(Modifier.width(18.dp))
                 }
-                Text(
-                    text = app.label,
-                    color = colors.onWallpaper,
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
+                if (hideName && showIcon) {
+                    Spacer(Modifier.weight(1f))
+                } else {
+                    Text(
+                        text = app.label,
+                        color = colors.onWallpaper,
+                        style = MaterialTheme.typography.headlineSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 if (!showIcon && latest != null) {
                     Box(Modifier.size(8.dp).clip(CircleShape).background(colors.accent))
                 }
@@ -250,7 +253,7 @@ fun FavoriteRow(
                 val shown = if (expanded) notifications.take(6) else notifications.take(1)
                 Column(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.padding(start = if (showIcon) 62.dp else 0.dp, top = 8.dp),
+                    modifier = Modifier.padding(start = if (showIcon) 44.dp * iconScale + 18.dp else 0.dp, top = 8.dp),
                 ) {
                     shown.forEach { n ->
                         key(n.key) {
